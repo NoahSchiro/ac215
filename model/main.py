@@ -1,5 +1,5 @@
 def main():
-    print("Hello from ac215!")
+    print("Hello from model!")
 
 
 if __name__ == "__main__":
