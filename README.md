@@ -4,6 +4,8 @@ This repo tracks the progress of the final project for AC215 @ Harvard for Fall 
 
 ## Proposal
 
+`./proposal/`
+
 Full proposal can be found [here](./proposal/README.md). The basic idea is that users will use [gaze tracking](https://en.wikipedia.org/wiki/Eye_tracking) to guide a ball through a maze.
 
 ## Training and backend

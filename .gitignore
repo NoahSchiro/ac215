@@ -15,3 +15,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Typst output
+*.pdf
