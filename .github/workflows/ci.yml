@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  model:
+    name: model (mypy + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: model
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          working-directory: model
+      - run: uv sync
+      - run: uv run mypy .
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  ui:
+    name: ui (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  proposal:
+    name: proposal (typst compile)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proposal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: typst-community/setup-typst@v3
+      - run: typst compile main.typ
