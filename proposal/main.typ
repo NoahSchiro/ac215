@@ -3,7 +3,7 @@
 #let title = "[G/M]aze tracking"
 
 #set page(paper: "us-letter", margin: (x: 1in, y: 1in, top: 0.5in))
-#set document(title: title, author: "Gabe Gonzalez, Noah Schiro, Minh-Thy Tyler")
+#set document(title: title, author: "Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler")
 #set par(spacing: 0.8em)
 #set enum(spacing: 0.55em)
 #set list(spacing: 0.55em)
