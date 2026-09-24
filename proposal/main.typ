@@ -1,9 +1,10 @@
 #show link: set text(fill: blue)
 
 #let title = "[G/M]aze tracking"
+#let authors = "Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler"
 
 #set page(paper: "us-letter", margin: (x: 1in, y: 1in, top: 0.5in))
-#set document(title: title, author: "Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler")
+#set document(title: title, author: authors)
 #set par(spacing: 0.8em)
 #set enum(spacing: 0.55em)
 #set list(spacing: 0.55em)
@@ -11,6 +12,7 @@
 #show heading: set block(above: 0.75em, below: 0.35em)
 
 #align(center, text(size: 14pt, weight: "bold")[#title])
+#align(center, authors)
 
 = Introduction
 short problem statement here
