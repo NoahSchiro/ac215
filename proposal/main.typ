@@ -1,16 +1,16 @@
+#show link: set text(fill: blue)
 
-#import "@preview/basic-report:0.5.0": *
+#let title = "[G/M]aze tracking"
 
-#show: it => basic-report(
-  doc-category: "",
-  doc-title: "Lorem",
-  author: "Noah Schiro",
-  affiliation: "Harvard",
-  logo: "", // we can attach a small image here if we want with image("./path_to_image")
-  language: "en",
-  compact-mode: true,
-  it
-)
+#set page(paper: "us-letter", margin: (x: 1in, y: 1in, top: 0.5in))
+#set document(title: title, author: "Gabe Gonzalez, Noah Schiro, Minh-Thy Tyler")
+#set par(spacing: 0.8em)
+#set enum(spacing: 0.55em)
+#set list(spacing: 0.55em)
+#show heading: set text(size: 11pt)
+#show heading: set block(above: 0.75em, below: 0.35em)
+
+#align(center, text(size: 14pt, weight: "bold")[#title])
 
 = Introduction
 short problem statement here
