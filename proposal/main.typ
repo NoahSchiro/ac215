@@ -1,7 +1,7 @@
 #show link: set text(fill: blue)
 
 #let title = "[G/M]aze tracking"
-#let authors = "Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler"
+#let authors = "Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler, Rongzhi Chen"
 
 #set page(paper: "us-letter", margin: (x: 1in, y: 1in, top: 0.5in))
 #set document(title: title, author: authors)
