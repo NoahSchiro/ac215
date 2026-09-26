@@ -1,4 +1,5 @@
-data/
+# Note that the tar.gz is allowed
+data/MPIIFaceGaze/*
 
 __pycache__/
 *.pyc
