@@ -23,18 +23,18 @@ short problem statement here
 == Motivation
 #lorem(100)
 
-= Data
+= Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
 - #link("https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/")[MPIIFaceGaze]: Slightly higher quality dataset, and uses laptop webcams. Unfortunately it only contains 213k images across 15 participants.
 - Calibration data. Before participants begin the game, they will be guided through a calibration test (looking at ~9-20 points on the screen to fine tune the model further).
 
-== Key attributes / shape of the data
+== Data Key Attributes
 #lorem(100)
 
-== Relevance
+== Data Relevance
 #lorem(100)
 
-== Quality
+== Data Quality
 #lorem(100)
 
 = Scope and Design
