@@ -59,7 +59,9 @@ With this design, most of the heavy lifting happens client side. The primary bot
 )
 
 == Risks and limitations
-What problems might arise?
+The main challenge of our project is achieving reliable eye tracking within the time limitations of a semester. The model may perform inconsistently across users because reliable eye tracking requires individual calibration. Eye appearances vary from user to user, so a model that works well for one participant may perform less accurately for another. Examples including glasses and heavy eye makeup all create additional challenges during model calibration and use. 
+Our approach also depends on standard webcams, which have limited frame rates compared with dedicated eye tracking hardware. Rapid eye movements may occur between frames, making it harder for our model to estimate where a user is looking. Environmental factors matter as well–changes in room lighting, shadows, and screen brightness could reduce accuracy even for a user who is already calibrated to our system. Finally, eye movement doesn’t always reflect a deliberate choice. A user may glance at an object without intending to select it, so our system will need a way to distinguish between casual looking and intentional interaction. 
+
 
 = Milestones
 The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup in such a way that CI is enforced, and a minimum code coverage is required for PRs to be merged. Milestones related to CI / code coverage are already met at the beginning of the project and will be maintained as such.
