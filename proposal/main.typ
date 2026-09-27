@@ -15,14 +15,14 @@
 #align(center, authors)
 
 = Introduction
-Can appearance-based gaze estimation from a commodity laptop webcam serve as a real-time control input for navigating a two-dimensional interface? We build a browser-based maze in which the player steers a ball by gaze alone, and use the game as a closed-loop test of whether the model's predictions are accurate and stable enough to act on.
+Develop an application that lets a user control a two-dimensional interface using only gaze from a standard laptop webcam, demonstrated through a maze in which a ball is steered by eye movements alone. The maze is a deliberately demanding test of whether commodity-webcam gaze estimation is precise and stable enough for real-time control.
 
-== Background
-Our project explores webcam-based eye tracking as a way to interact with a computer through gaze. We will build a software that uses a standard laptop webcam to estimate where the user is looking and translate that information into controls of an on-screen game. Our demonstration of our system will be a maze (subject to change, may explore other formats i.e. racing game) where the user can control how to solve it through eye movements.
+== Background and Motivation
+Appearance-based gaze estimation infers where a person is looking from ordinary camera images, without the infrared hardware that dedicated eye trackers require. We use a standard laptop webcam to estimate the user's gaze point on screen and turn it into a hands-free control signal.
 
-== Motivation
-We are motivated by the prospect of making the digital world more accessible to people who have difficulty using a mouse, keyboard, or handheld controller. Potential users include people with upper-body injuries, paralysis affecting limbs, or medical conditions such as arthritis that can make hand movements difficult. Using a standard webcam device–something that most people have in their homes–reduces the need for expensive and specialized hardware. Beyond accessibility, our project also has commercial applications–where users who have their hands full can interact with their laptop.
-Our interest in machine learning and accessibility led us to choose a game as an engaging way to explore the technology we aim to create. The game will provide entertainment across all ages. Beyond players, product users could be caregivers, rehabilitation specialists, developers, and many others. While our semester project will focus on a playable demonstration, we hope that it will help us understand the potential for webcam-based eye tracking and how it can support other forms of hands-free device interaction. 
+Our stakeholders are people for whom a mouse, keyboard or controller is difficult or impossible to use — after upper-body injury, with limb paralysis, or with conditions such as arthritis — and for whom dedicated gaze hardware is expensive and specialized. Commodity webcams are already in most homes, so the remaining barrier is software rather than equipment. The nearest everyday application is hands-free reading and browsing: scrolling a document or selecting an image without touching the machine, which needs far less precision than continuous steering does. Caregivers, rehabilitation specialists and accessibility developers also benefit from knowing what commodity hardware can and cannot support.
+
+Our team's shared interest in machine learning and accessibility led us to a game as the demonstration, because a control task makes the model's real-time behaviour visible in a way that an offline accuracy number does not.
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
@@ -103,7 +103,7 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup i
 
 = Research and Development
 - GazeTracking dataset: Kyle Krafka, Aditya Khosla, Petr Kellnhofer, Harini Kannan, Suchi Bhandarkar, Wojciech Matusik and Antonio Torralba. “Eye Tracking for Everyone”. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016. (https://gazecapture.csail.mit.edu/)
-- MPIIFaceGaze: https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/
-- Data normalization: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Revisiting Data Normalization for Appearance-Based Gaze Estimation". ACM Symposium on Eye Tracking Research & Applications (ETRA), 2018. (https://dl.acm.org/doi/10.1145/3204493.3204548)
+- MPIIFaceGaze dataset: Xucong Zhang, Yusuke Sugano, Mario Fritz and Andreas Bulling. "It's Written All Over Your Face: Full-Face Appearance-Based Gaze Estimation". CVPR Workshops, 2017. (https://openaccess.thecvf.com/content_cvpr_2017_workshops/w41/papers/Bulling_Its_Written_All_CVPR_2017_paper.pdf)
+- Data normalization: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Revisiting Data Normalization for Appearance-Based Gaze Estimation". ACM Symposium on Eye Tracking Research & Applications (ETRA), 2018. (https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/revisiting-data-normalization-for-appearance-based-gaze-estimation)
 - Browser-based gaze tracking and regression calibration: Alexandra Papoutsaki, Patsorn Sangkloy, James Laskey, Nediyana Daskalova, Jeff Huang and James Hays. "WebGazer: Scalable Webcam Eye Tracking Using User Interactions". IJCAI, 2016. (https://www.ijcai.org/Proceedings/16/Papers/540.pdf)
-- Offline accuracy vs. application usability: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications". CHI, 2019. (https://dl.acm.org/doi/10.1145/3290605.3300646)
+- Offline accuracy vs. application usability: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications". CHI, 2019. (https://arxiv.org/abs/1901.10906)
