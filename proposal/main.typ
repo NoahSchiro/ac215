@@ -18,10 +18,11 @@
 short problem statement here
 
 == Background
-#lorem(100)
+Our project explores webcam-based eye tracking as a way to interact with a computer through gaze. We will build a software that uses a standard laptop webcam to estimate where the user is looking and translate that information into controls of an on-screen game. Our demonstration of our system will be a maze (subject to change, may explore other formats i.e. racing game) where the user can control how to solve it through eye movements.
 
 == Motivation
-#lorem(100)
+We are motivated by the prospect of making the digital world more accessible to people who have difficulty using a mouse, keyboard, or handheld controller. Potential users include people with upper-body injuries, paralysis affecting limbs, or medical conditions such as arthritis that can make hand movements difficult. Using a standard webcam device–something that most people have in their homes–reduces the need for expensive and specialized hardware. Beyond accessibility, our project also has commercial applications–where users who have their hands full can interact with their laptop.
+Our interest in machine learning and accessibility led us to choose a game as an engaging way to explore the technology we aim to create. The game will provide entertainment across all ages. Beyond players, product users could be caregivers, rehabilitation specialists, developers, and many others. While our semester project will focus on a playable demonstration, we hope that it will help us understand the potential for webcam-based eye tracking and how it can support other forms of hands-free device interaction. 
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
@@ -70,7 +71,10 @@ With this design, most of the heavy lifting happens client side. The primary bot
 )
 
 == Risks and limitations
-What problems might arise?
+The main challenge of our project is achieving reliable eye tracking within the time limitations of a semester. The model may perform inconsistently across users because reliable eye tracking requires individual calibration. Eye appearances vary from user to user, so a model that works well for one participant may perform less accurately for another. Examples including glasses and heavy eye makeup all create additional challenges during model calibration and use.
+Another limitation is the diversity of our training data. Relying solely on MPII would limit our data to 15 participants–severely restricting our models ability to adapt to new users. To address this, we are incorporating GazeCapture, a dataset that uses mobile-device cameras. However, although adding GazeCapture would broaden our training data, it may not improve performance as there would be differences in camera hardware and viewing angles across our two datasets. We will need to evaluate how well the model transfers to webcam use and determine whether additional calibration is required.
+Our approach also depends on standard webcams, which have limited frame rates compared with dedicated eye tracking hardware. Rapid eye movements may occur between frames, making it harder for our model to estimate where a user is looking. Environmental factors matter as well–changes in room lighting, shadows, and screen brightness could reduce accuracy even for a user who is already calibrated to our system. Finally, eye movement doesn’t always reflect a deliberate choice. A user may glance at an object without intending to select it, so our system will need a way to distinguish between casual looking and intentional interaction. 
+
 
 = Milestones
 The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup in such a way that CI is enforced, and a minimum code coverage is required for PRs to be merged. Milestones related to CI / code coverage are already met at the beginning of the project and will be maintained as such.
