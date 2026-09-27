@@ -29,13 +29,24 @@ short problem statement here
 - Calibration data. Before participants begin the game, they will be guided through a calibration test (looking at ~9-20 points on the screen to fine tune the model further).
 
 == Data Key Attributes
-#lorem(100)
+MPIIFaceGaze ships one annotation file per participant (`pXX.txt`, one row per image, 28 columns) plus a `Calibration` folder with `Camera.mat` (intrinsics, distortion), `monitorPose.mat` (screen plane pose in camera coordinates) and `screenSize.mat` (screen size in pixels and mm). We use:
+- *Image path* (col. 1): the full-face frame, from which a landmark detector (identical in training and in the browser) yields face and eye crops.
+- *Gaze target on screen* (cols. 2-3), in pixels. Divided by the `screenSize.mat` pixel dimensions this becomes our label $(x, y) in [0,1]^2$, the same space the maze runs in.
+- *Facial landmarks* (cols. 4-15): four eye corners and two mouth corners, used to validate our detector and define eye crops.
+- *Head pose* (cols. 16-21) and *face center* (cols. 22-24) in camera coordinates, with `Camera.mat`: drive normalization of crops into a canonical camera space so cameras, distances and head angles are comparable.
+- *3D gaze target* (cols. 25-27): minus the face center gives gaze direction, an alternative label if we predict direction and intersect the screen plane from `monitorPose.mat`.
+- *Participant ID* (folder): for person-level train/validation splits. Col. 28 (evaluation eye) is not needed.
+
+GazeCapture provides analogous JSON fields (dot position, orientation, screen size, face/eye boxes). Our *calibration frames* (9 to 20 per player) pair an image with a known screen-fraction target, for on-device ridge regression only.
 
 == Data Relevance
-#lorem(100)
+The task is appearance-based gaze estimation: predict where on the screen a person is looking from one webcam frame, then use that as a game controller. MPIIFaceGaze matches our deployment setting: laptop webcams over months of everyday use, covering the lighting, distance, head-pose and glasses variation of someone playing at a laptop. Its labels are already screen points and it ships the camera and screen geometry needed for normalization, so no extra annotation is needed. GazeCapture is mobile, but has two orders of magnitude more people, which a CNN needs to generalize across identities. We pretrain on GazeCapture, then fine-tune and evaluate on MPIIFaceGaze in screen-fraction error.
 
 == Data Quality
-#lorem(100)
+- *Few identities.* MPIIFaceGaze has 213k images but 15 people, so a model can memorize faces. Preliminary plan: leave-one-person-out splits and per-participant error reporting.
+- *Domain gap.* Phone vs. laptop cameras and geometry. Preliminary plan: GazeCapture for pretraining only, validate on laptop data.
+- *Landmark mismatch.* Shipped landmarks and head pose come from a 6-point model, not our browser detector. Preliminary plan: recompute landmarks with our detector.
+- *Calibration variability.* Players may move or look away. Preliminary plan: require a minimum of valid frames per cross-hair, allow redo.
 
 = Scope and Design
 The project will have a few primary components:
@@ -89,4 +100,5 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup i
 = References
 - GazeTracking dataset: Kyle Krafka, Aditya Khosla, Petr Kellnhofer, Harini Kannan, Suchi Bhandarkar, Wojciech Matusik and Antonio Torralba. “Eye Tracking for Everyone”. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016. (https://gazecapture.csail.mit.edu/)
 - MPIIFaceGaze: https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/
+- Data normalization: Zhang et al. "Appearance-Based Gaze Estimation in the Wild". CVPR, 2015.
 - Ridge regression: https://ieeexplore.ieee.org/document/11427170/
