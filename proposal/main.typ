@@ -15,7 +15,7 @@
 #align(center, authors)
 
 = Introduction
-short problem statement here
+Can appearance-based gaze estimation from a commodity laptop webcam serve as a real-time control input for navigating a two-dimensional interface? We build a browser-based maze in which the player steers a ball by gaze alone, and use the game as a closed-loop test of whether the model's predictions are accurate and stable enough to act on.
 
 == Background
 Our project explores webcam-based eye tracking as a way to interact with a computer through gaze. We will build a software that uses a standard laptop webcam to estimate where the user is looking and translate that information into controls of an on-screen game. Our demonstration of our system will be a maze (subject to change, may explore other formats i.e. racing game) where the user can control how to solve it through eye movements.
@@ -101,8 +101,9 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup i
 - Deployment is switched to kubernetes for easy scale up.
 - Final presentation is prepared.
 
-= References
+= Research and Development
 - GazeTracking dataset: Kyle Krafka, Aditya Khosla, Petr Kellnhofer, Harini Kannan, Suchi Bhandarkar, Wojciech Matusik and Antonio Torralba. “Eye Tracking for Everyone”. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016. (https://gazecapture.csail.mit.edu/)
 - MPIIFaceGaze: https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/
-- Data normalization: Zhang et al. "Appearance-Based Gaze Estimation in the Wild". CVPR, 2015.
-- Ridge regression: https://ieeexplore.ieee.org/document/11427170/
+- Data normalization: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Revisiting Data Normalization for Appearance-Based Gaze Estimation". ACM Symposium on Eye Tracking Research & Applications (ETRA), 2018. (https://dl.acm.org/doi/10.1145/3204493.3204548)
+- Browser-based gaze tracking and regression calibration: Alexandra Papoutsaki, Patsorn Sangkloy, James Laskey, Nediyana Daskalova, Jeff Huang and James Hays. "WebGazer: Scalable Webcam Eye Tracking Using User Interactions". IJCAI, 2016. (https://www.ijcai.org/Proceedings/16/Papers/540.pdf)
+- Offline accuracy vs. application usability: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications". CHI, 2019. (https://dl.acm.org/doi/10.1145/3290605.3300646)
