@@ -18,10 +18,11 @@
 short problem statement here
 
 == Background
-#lorem(100)
+Our project explores webcam-based eye tracking as a way to interact with a computer through gaze. We will build a software that uses a standard laptop webcam to estimate where the user is looking and translate that information into controls of an on-screen game. Our demonstration of our system will be a maze (subject to change, may explore other formats i.e. racing game) where the user can control how to solve it through eye movements.
 
 == Motivation
-#lorem(100)
+We are motivated by the prospect of making the digital world more accessible to people who have difficulty using a mouse, keyboard, or handheld controller. Potential users include people with upper-body injuries, paralysis affecting limbs, or medical conditions such as arthritis that can make hand movements difficult. Using a standard webcam device–something that most people have in their homes–reduces the need for expensive and specialized hardware. Beyond accessibility, our project also has commercial applications–where users who have their hands full can interact with their laptop.
+Our interest in machine learning and accessibility led us to choose a game as an engaging way to explore the technology we aim to create. The game will provide entertainment across all ages. Beyond players, product users could be caregivers, rehabilitation specialists, developers, and many others. While our semester project will focus on a playable demonstration, we hope that it will help us understand the potential for webcam-based eye tracking and how it can support other forms of hands-free device interaction. 
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
