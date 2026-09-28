@@ -3,26 +3,27 @@
 #let title = "[G/M]aze tracking"
 #let authors = "Rongzhi Chen, Gabe Gonzalez, Rui Huang, Noah Schiro, Minh-Thy Tyler"
 
-#set page(paper: "us-letter", margin: (x: 1in, y: 1in, top: 0.5in))
+#set page(paper: "us-letter", margin: (x: 0.85in, top: 0.5in, bottom: 0.7in))
 #set document(title: title, author: authors)
-#set par(spacing: 0.8em)
-#set enum(spacing: 0.55em)
-#set list(spacing: 0.55em)
+#set text(size: 10.5pt)
+#set par(spacing: 0.7em)
+#set enum(spacing: 0.4em)
+#set list(spacing: 0.4em)
 #show heading: set text(size: 11pt)
-#show heading: set block(above: 0.75em, below: 0.35em)
+#show heading: set block(above: 0.5em, below: 0.25em)
 
 #align(center, text(size: 14pt, weight: "bold")[#title])
 #align(center, authors)
 
 = Introduction
-Develop an application that lets a user control a two-dimensional interface using only gaze from a standard laptop webcam, demonstrated through a maze in which a ball is steered by eye movements alone. Should the achievable accuracy prove too coarse for continuous steering, we fall back to a gaze cursor for hands-free browsing — scroll by gaze position, select by dwell — which tolerates larger error while reusing the same model, data and deployment pipeline.
+Develop an application that lets a user control a two-dimensional interface using only gaze from a standard laptop webcam, demonstrated through a maze in which a ball is steered by eye movements alone. If accuracy proves too coarse for steering, we fall back to a gaze cursor — scroll by gaze, select by dwell — reusing the same model and pipeline.
 
 == Background and Motivation
-Appearance-based gaze estimation infers where a person is looking from ordinary camera images, without the infrared hardware that dedicated eye trackers require. We use a standard laptop webcam to estimate the user's gaze point on screen and turn it into a hands-free control signal.
+Appearance-based gaze estimation infers where a person is looking from ordinary camera images, without the infrared hardware dedicated eye trackers require. We use a standard laptop webcam to estimate the user's gaze point and turn it into a hands-free control signal.
 
-Our stakeholders are, first, people for whom a mouse and keyboard are difficult or impossible — paralysis, arthritis, injury — and for whom dedicated gaze hardware is expensive and specialized; commodity webcams are already in most homes, so the remaining barrier is software rather than equipment. Second, anyone whose hands are temporarily occupied: reading a recipe while cooking, following instructions while assembling parts, consulting a protocol during a gloved wet-lab experiment. Both groups mostly need to read and browse rather than steer — scrolling a document, selecting an image — which tolerates far more error than continuous control. Voice is the other hands-free channel and a good one, but it fails in shared or noisy rooms and excludes people with speech impairments; gaze is silent.
+Our stakeholders are, first, people for whom a mouse and keyboard are difficult or impossible — limb paralysis, arthritis, injury — and for whom dedicated gaze hardware is expensive and specialized; commodity webcams are already in most homes, so the barrier is software rather than equipment. Second, anyone whose hands are occupied: reading a recipe while cooking, following instructions while assembling parts, consulting a protocol in a gloved wet lab. Both groups need to read and browse rather than steer, which tolerates far more error. Voice is the other hands-free channel, but it fails in shared or noisy rooms and excludes people with speech impairments; gaze is silent.
 
-The same interaction model is moving into wearables — Apple Vision Pro already makes gaze the primary pointer — so what we learn transfers beyond the laptop, even though headsets sense gaze with dedicated infrared hardware rather than a webcam. Our own interest in machine learning and accessibility led us to a game as the demonstration, because a control task makes the model's real-time behaviour visible in a way that an offline accuracy number does not.
+The same interaction model is moving into wearables — Apple Vision Pro already makes gaze the primary pointer — so what we learn transfers beyond the laptop, though headsets sense gaze with dedicated infrared hardware. We chose a game as the demonstration because a control task makes real-time behaviour visible in a way an offline accuracy number does not.
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
@@ -61,7 +62,7 @@ The project will have a few primary components:
   - Many modern gaze tracking models are small enough to run in the browser. Even for the fine-tuning step, many algorithms use #link("https://en.wikipedia.org/wiki/Ridge_regression")[ridge regression] which can be computed within milliseconds.
   - At inference, cloud computing will primarily be responsible for serving the webpage and delivering the model weights.
 
-With this design, most of the heavy lifting happens client side. The primary bottleneck will be delivering the model weights when a user first connects with the app. For this reason, we likely want to use GCP Cloud Storage with a CDN attached to it. The CDN, after a cache warmup, will deliver the model weights extremely fast (assuming users are geographically centralized). Firebase hosting can serve the static (React) webpage. Realistically, this system could easily scale to _hundreds of thousands_ of concurrent users.
+Most of the heavy lifting happens client side, so the primary bottleneck is delivering the model weights when a user first connects. We plan to serve them from GCP Cloud Storage behind a CDN, which after a cache warmup delivers them quickly provided users are geographically clustered, with Firebase hosting the static React page. Realistically this scales to _hundreds of thousands_ of concurrent users.
 
 #figure(
   image("./assets/arch.png", width: 90%),
@@ -102,8 +103,8 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup i
 - Final presentation is prepared.
 
 = Research and Development
-- GazeTracking dataset: Kyle Krafka, Aditya Khosla, Petr Kellnhofer, Harini Kannan, Suchi Bhandarkar, Wojciech Matusik and Antonio Torralba. “Eye Tracking for Everyone”. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016. (https://gazecapture.csail.mit.edu/)
-- MPIIFaceGaze dataset: Xucong Zhang, Yusuke Sugano, Mario Fritz and Andreas Bulling. "It's Written All Over Your Face: Full-Face Appearance-Based Gaze Estimation". CVPR Workshops, 2017. (https://openaccess.thecvf.com/content_cvpr_2017_workshops/w41/papers/Bulling_Its_Written_All_CVPR_2017_paper.pdf)
-- Data normalization: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Revisiting Data Normalization for Appearance-Based Gaze Estimation". ACM Symposium on Eye Tracking Research & Applications (ETRA), 2018. (https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/revisiting-data-normalization-for-appearance-based-gaze-estimation)
-- Browser-based gaze tracking and regression calibration: Alexandra Papoutsaki, Patsorn Sangkloy, James Laskey, Nediyana Daskalova, Jeff Huang and James Hays. "WebGazer: Scalable Webcam Eye Tracking Using User Interactions". IJCAI, 2016. (https://www.ijcai.org/Proceedings/16/Papers/540.pdf)
-- Offline accuracy vs. application usability: Xucong Zhang, Yusuke Sugano and Andreas Bulling. "Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications". CHI, 2019. (https://arxiv.org/abs/1901.10906)
+- GazeCapture: Krafka et al., #link("https://gazecapture.csail.mit.edu/")[“Eye Tracking for Everyone”]. CVPR 2016.
+- MPIIFaceGaze dataset: Zhang et al., #link("https://openaccess.thecvf.com/content_cvpr_2017_workshops/w41/papers/Bulling_Its_Written_All_CVPR_2017_paper.pdf")["It's Written All Over Your Face: Full-Face Appearance-Based Gaze Estimation"]. CVPRW 2017.
+- Data normalization: Zhang et al., #link("https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/revisiting-data-normalization-for-appearance-based-gaze-estimation")["Revisiting Data Normalization for Appearance-Based Gaze Estimation"]. ETRA 2018.
+- Browser deployment: Papoutsaki et al., #link("https://www.ijcai.org/Proceedings/16/Papers/540.pdf")["WebGazer: Scalable Webcam Eye Tracking Using User Interactions"]. IJCAI 2016.
+- Evaluation: Zhang et al., #link("https://arxiv.org/abs/1901.10906")["Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications"]. CHI 2019.
