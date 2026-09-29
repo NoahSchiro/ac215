@@ -15,15 +15,15 @@
 #align(center, text(size: 14pt, weight: "bold")[#title])
 #align(center, authors)
 
-= Introduction
+= Problem Statement
 People who cannot use a mouse or keyboard have few good options: dedicated eye-tracking hardware is a separate, specialized purchase, and voice control is unusable in noisy spaces. We will develop an application that turns the laptop's built-in webcam into a gaze-driven pointer for two-dimensional interfaces and demonstrate its efficacy by steering a ball through a maze.
 
-== Background and Motivation
+= Background and Motivation
 Appearance-based gaze estimation infers where a person is looking from ordinary camera images, without the infrared hardware eye trackers require. We use a standard laptop webcam to estimate the user's gaze point and turn it into a hands-free control signal.
 
 Our stakeholders are people for whom a mouse and keyboard are difficult or impossible, including those with limb paralysis, arthritis, injury, or those who cannot afford additional eye-tracking equipment. A laptop webcam is already present, so the remaining barrier is software rather than equipment. Additionally, we target anyone whose hands are occupied: reading a recipe while cooking, following instructions while assembling parts, consulting a protocol in a gloved wet lab. Voice is the other hands-free channel, but it fails in shared or noisy rooms and excludes people with speech impairments; gaze is silent.
 
-The same interaction model is moving into wearables. Apple Vision Pro already makes gaze the primary pointer, so what we learn transfers beyond the laptop, even though headsets sense gaze with infrared hardware. We chose a game as the demonstration because a control task makes real-time behavior visible in a way an offline accuracy number does not. Games are fun to play and can get people excited about the intersection between machine learning and accessibility.
+The same interaction model is moving into wearables. Apple Vision Pro already makes gaze the primary pointer, so what we learn transfers beyond the laptop, even though headsets sense gaze with infrared hardware. We chose a game as the demonstration because a control task makes real-time behavior visible in a way an offline accuracy number does not.
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
@@ -50,11 +50,8 @@ The task is appearance-based gaze estimation: predict where on the screen a pers
 - *Landmark mismatch.* Shipped landmarks and head pose come from a 6-point model, not our browser detector. Preliminary plan: recompute landmarks with our detector.
 - *Calibration variability.* Players may move or look away. Preliminary plan: require a minimum of valid frames per crosshair, allow redo.
 
-= Scope and Design
+= Scope and Objectives
 The project will have a few primary components:
-- A web UI
-  - A calibration screen and workflow, wherein users will be instructed to look at a set of points on the screen. At each point, a photo will be taken and stored to further calibrate the model to that specific user.
-  - A screen where a user can solve a maze, purely by using gaze.
 - Model training
   - During initial development and setup of the training pipeline, most development can happen locally (on small consumer GPUs).
   - For the final model training, we will likely want to utilize cloud compute resources. This can greatly speed up the search for the best hyperparameters.
@@ -62,16 +59,23 @@ The project will have a few primary components:
   - Many modern gaze-tracking models are small enough to run in the browser. Even for the fine-tuning step, algorithms commonly use #link("https://en.wikipedia.org/wiki/Ridge_regression")[ridge regression] which can be computed within milliseconds.
   - At inference, cloud computing will primarily be responsible for serving the webpage and delivering the model weights.
 
-Most of the heavy lifting happens client-side, so the primary bottleneck is delivering the model weights when a user first connects. We plan to serve them from GCP Cloud Storage behind a CDN. The CDN ensures that we have extremely low load times when a user first connects to the website. Firebase will host the static React page. Realistically, this architecture can scale to _hundreds of thousands_ of concurrent users.
+Most of the heavy lifting happens client-side, so the primary bottleneck is delivering the model weights when a user first connects. We plan to serve them from GCP Cloud Storage behind a CDN. The CDN ensures that we have extremely low load times when a user first connects to the website. Firebase will host the static React page.
 
-#figure(
-  image("./assets/arch.png", width: 90%),
-  caption: [
-    A diagram of the system architecture.
-  ],
-)
 
-== Risks and limitations
+= Minimum Components for a Good Project
+- *Large data:* 2.5 million GazeCapture images and 37k MPIIFaceGaze images, spanning two different capture regimes.
+- *Scalability:* Model weights are served from a CDN and inference runs in the user's browser, so the backend scales to hundreds of thousands of concurrent users.
+- *Complex models:* A convolutional gaze-estimation network pretrained on GazeCapture and fine-tuned on MPIIFaceGaze.
+- *Computationally expensive inference:* Gaze must be predicted from every webcam frame fast enough to steer with, within a browser's compute budget.
+
+= Learning Emphasis
+The project emphasizes convolutional neural networks for appearance-based gaze regression, transfer learning across two datasets with different camera geometry, and ridge regression for per-user calibration, alongside the containerization, experiment tracking and cloud deployment practices covered in the course.
+
+= Application Mock Design
+- *Interface 1:* Calibration screen. The user is guided through a set of on-screen points; a frame is captured at each one and used to fit the per-user model.
+- *Interface 2:* Maze screen. The user steers a ball to the exit using gaze alone, with a win condition and a completion time.
+
+= Limitations and Risks
 - *Per-user variation.* Eye appearance differs enough between people that a model calibrated for one can be noticeably worse for another. Glasses and heavy eye makeup make this worse.
 - *Narrow training data.* MPIIFaceGaze covers 15 people. GazeCapture adds identity diversity but was shot on phone cameras, so transfer to laptop webcams is unproven and may need more calibration than we have budgeted.
 - *Commodity hardware.* Webcams run at low frame rates, so fast eye movements fall between frames. Lighting, shadows and screen brightness degrade accuracy even after a user is calibrated.
@@ -109,3 +113,6 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is currently set i
 - Data normalization: Zhang et al., #link("https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/revisiting-data-normalization-for-appearance-based-gaze-estimation")["Revisiting Data Normalization for Appearance-Based Gaze Estimation"]. ETRA 2018.
 - Browser deployment: Papoutsaki et al., #link("https://www.ijcai.org/Proceedings/16/Papers/540.pdf")["WebGazer: Scalable Webcam Eye Tracking Using User Interactions"]. IJCAI 2016.
 - Evaluation: Zhang et al., #link("https://arxiv.org/abs/1901.10906")["Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications"]. CHI 2019.
+
+= Fun Factor
+Games are fun to play and can get people excited about the intersection between machine learning and accessibility.
