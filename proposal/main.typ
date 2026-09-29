@@ -16,14 +16,14 @@
 #align(center, authors)
 
 = Introduction
-Develop an application that lets a user control a two-dimensional interface using only gaze from a standard laptop webcam, demonstrated through a maze in which a ball is steered by eye movements alone. If accuracy proves too coarse for steering, we fall back to a gaze cursor — scroll by gaze, select by dwell — reusing the same model and pipeline.
+People who cannot use a mouse or keyboard have few good options: dedicated eye-tracking hardware is a separate, specialized purchase, and voice control is unusable in shared, quiet or noisy spaces. Develop an application that turns the webcam already built into a laptop into a gaze-driven pointer for two-dimensional interfaces, demonstrated by steering a ball through a maze.
 
 == Background and Motivation
 Appearance-based gaze estimation infers where a person is looking from ordinary camera images, without the infrared hardware dedicated eye trackers require. We use a standard laptop webcam to estimate the user's gaze point and turn it into a hands-free control signal.
 
-Our stakeholders are, first, people for whom a mouse and keyboard are difficult or impossible — limb paralysis, arthritis, injury — and for whom dedicated gaze hardware is expensive and specialized; commodity webcams are already in most homes, so the barrier is software rather than equipment. Second, anyone whose hands are occupied: reading a recipe while cooking, following instructions while assembling parts, consulting a protocol in a gloved wet lab. Both groups need to read and browse rather than steer, which tolerates far more error. Voice is the other hands-free channel, but it fails in shared or noisy rooms and excludes people with speech impairments; gaze is silent.
+Our stakeholders are, first, people for whom a mouse and keyboard are difficult or impossible, including those with limb paralysis, arthritis or injury, and for whom dedicated eye-tracking hardware is an additional specialized purchase. A laptop webcam is already present, so the remaining barrier is software rather than equipment. Second, anyone whose hands are occupied: reading a recipe while cooking, following instructions while assembling parts, consulting a protocol in a gloved wet lab. Both groups need to read and browse rather than steer, which tolerates far more error. Voice is the other hands-free channel, but it fails in shared or noisy rooms and excludes people with speech impairments; gaze is silent.
 
-The same interaction model is moving into wearables — Apple Vision Pro already makes gaze the primary pointer — so what we learn transfers beyond the laptop, though headsets sense gaze with dedicated infrared hardware. We chose a game as the demonstration because a control task makes real-time behaviour visible in a way an offline accuracy number does not.
+The same interaction model is moving into wearables. Apple Vision Pro already makes gaze the primary pointer, so what we learn transfers beyond the laptop, even though headsets sense gaze with dedicated infrared hardware. We chose a game as the demonstration because a control task makes real-time behaviour visible in a way an offline accuracy number does not, and because the intersection of machine learning and accessibility is a genuinely fun thing to build and an easy one to get people excited about.
 
 = Data Sources
 - #link("https://gazecapture.csail.mit.edu/")[GazeCapture]: Data from ~1,500 participants, contains over 2.5 million images, data collected and intended for mobile phone cameras, but will serve well as a pretraining dataset
@@ -67,7 +67,7 @@ Most of the heavy lifting happens client side, so the primary bottleneck is deli
 #figure(
   image("./assets/arch.png", width: 90%),
   caption: [
-    A diagram of the system archictecture.
+    A diagram of the system architecture.
   ],
 )
 
@@ -75,7 +75,8 @@ Most of the heavy lifting happens client side, so the primary bottleneck is deli
 - *Per-user variation.* Eye appearance differs enough between people that a model calibrated for one can be noticeably worse for another. Glasses and heavy eye makeup make this worse.
 - *Narrow training data.* MPIIFaceGaze covers 15 people. GazeCapture adds identity diversity but was shot on phone cameras, so transfer to laptop webcams is unproven and may need more calibration than we have budgeted.
 - *Commodity hardware.* Webcams run at low frame rates, so fast eye movements fall between frames. Lighting, shadows and screen brightness degrade accuracy even after a user is calibrated.
-- *Looking is not commanding.* Eyes explore as much as they act, so the system cannot treat every glance as input — the Midas touch problem. Dwell-time confirmation is the standard fix, but it only applies to discrete selection, not to continuous steering. This is the risk most specific to the maze.
+- *Looking is not commanding.* Eyes explore as much as they act, so the system cannot treat every glance as input. This is the Midas touch problem. Dwell-time confirmation is the standard fix, but it applies to discrete selection rather than continuous steering, which makes it the risk most specific to the maze.
+- *Fallback if precision falls short.* If gaze proves too coarse to steer with, we fall back to a gaze cursor for browsing: scroll by gaze position, select by dwell. Targets can be made larger and errors are self-correcting, and the model, datasets and deployment path are unchanged, so only the UI layer differs.
 
 = Milestones
 The #link("https://github.com/NoahSchiro/ac215/")[repository] is already setup in such a way that CI is enforced, and a minimum code coverage is required for PRs to be merged. Milestones related to CI / code coverage are already met at the beginning of the project and will be maintained as such.
