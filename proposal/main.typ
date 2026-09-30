@@ -59,21 +59,23 @@ The project will have a few primary components:
   - Many modern gaze-tracking models are small enough to run in the browser. Even for the fine-tuning step, algorithms commonly use #link("https://en.wikipedia.org/wiki/Ridge_regression")[ridge regression] which can be computed within milliseconds.
   - At inference, cloud computing will primarily be responsible for serving the webpage and delivering the model weights.
 
-Most of the heavy lifting happens client-side, so the primary bottleneck is delivering the model weights when a user first connects. We plan to serve them from GCP Cloud Storage behind a CDN. The CDN ensures that we have extremely low load times when a user first connects to the website. Firebase will host the static React page.
+Most of the heavy lifting happens client-side, so the primary bottleneck is delivering the model weights when a user first connects. We plan to serve them from GCP Cloud Storage behind a CDN. The CDN ensures that we have extremely low load times when a user first connects to the website. Firebase will host the static React page. This system can scale realistically scale to _hundreds of thousands_ of concurrent users.
 
-
-= Minimum Components for a Good Project
-- *Large data:* 2.5 million GazeCapture images and 37k MPIIFaceGaze images, spanning two different capture regimes.
-- *Scalability:* Model weights are served from a CDN and inference runs in the user's browser, so the backend scales to hundreds of thousands of concurrent users.
-- *Complex models:* A convolutional gaze-estimation network pretrained on GazeCapture and fine-tuned on MPIIFaceGaze.
-- *Computationally expensive inference:* Gaze must be predicted from every webcam frame fast enough to steer with, within a browser's compute budget.
+Inference has real computational constraints we must work around. The model will be running in the browser and needs to be small enough to be fine tuned on CPU and run inference several times a second. However, the model must also be large enough that it can reliably estimate gaze.
 
 = Learning Emphasis
 The project emphasizes convolutional neural networks for appearance-based gaze regression, transfer learning across two datasets with different camera geometry, and ridge regression for per-user calibration, alongside the containerization, experiment tracking and cloud deployment practices covered in the course.
 
 = Application Mock Design
-- *Interface 1:* Calibration screen. The user is guided through a set of on-screen points; a frame is captured at each one and used to fit the per-user model.
-- *Interface 2:* Maze screen. The user steers a ball to the exit using gaze alone, with a win condition and a completion time.
+- *User Interface 1:* Calibration screen. The user is guided through a set of on-screen points; a frame is captured at each one and used to fit the per-user model.
+- *User Interface 2:* Maze screen. The user steers a ball to the exit using gaze alone, with a win condition and a completion time.
+
+#figure(
+  image("./assets/arch.png", width: 70%),
+  caption: [
+    A diagram of the system architecture.
+  ],
+)
 
 = Limitations and Risks
 - *Per-user variation.* Eye appearance differs enough between people that a model calibrated for one can be noticeably worse for another. Glasses and heavy eye makeup make this worse.
@@ -81,6 +83,9 @@ The project emphasizes convolutional neural networks for appearance-based gaze r
 - *Commodity hardware.* Webcams run at low frame rates, so fast eye movements fall between frames. Lighting, shadows and screen brightness degrade accuracy even after a user is calibrated.
 - *Looking is not commanding.* Eyes explore as much as they act, so the system cannot treat every glance as input. This is the Midas touch problem. Dwell-time confirmation is a standard fix, but applies to discrete selection rather than continuous steering, which makes it the risk most specific to the maze.
 - *Fallback if precision falls short.* If gaze proves too coarse to steer with, we fall back to a gaze cursor for browsing: scroll by gaze position, or select by dwell. Targets can be made larger and errors are self-correcting. The model, datasets and deployment path are unchanged, so only the UI layer differs.
+
+= Fun Factor
+Demonstrating the gaze tracking system as a means of controlling a game is both engaging, fun, and can get people excited about the intersection between machine learning and accessibility.
 
 = Milestones
 The #link("https://github.com/NoahSchiro/ac215/")[repository] is currently set in such a way that CI is enforced, and a minimum level of code coverage is required for PRs to be merged. Milestones related to CI / code coverage were already met at the beginning of the project and will be maintained as such.
@@ -113,6 +118,3 @@ The #link("https://github.com/NoahSchiro/ac215/")[repository] is currently set i
 - Data normalization: Zhang et al., #link("https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/revisiting-data-normalization-for-appearance-based-gaze-estimation")["Revisiting Data Normalization for Appearance-Based Gaze Estimation"]. ETRA 2018.
 - Browser deployment: Papoutsaki et al., #link("https://www.ijcai.org/Proceedings/16/Papers/540.pdf")["WebGazer: Scalable Webcam Eye Tracking Using User Interactions"]. IJCAI 2016.
 - Evaluation: Zhang et al., #link("https://arxiv.org/abs/1901.10906")["Evaluation of Appearance-Based Methods and Implications for Gaze-Based Applications"]. CHI 2019.
-
-= Fun Factor
-Games are fun to play and can get people excited about the intersection between machine learning and accessibility.
