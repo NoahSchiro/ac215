@@ -17,10 +17,11 @@
   equality). This keeps samples with loaded pixels safely comparable.
 """
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -227,3 +228,19 @@ class Sample:
             ),
             device_type=DeviceType(entry["device_type"]),
         )
+
+
+def write_manifest(samples: list[Sample], path: Path) -> None:
+    """Write samples as a JSON manifest (byte-identical for identical input)."""
+    entries = [sample.to_manifest_entry() for sample in samples]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        json.dump(entries, f, ensure_ascii=True, separators=(",", ":"))
+        f.write("\n")
+
+
+def read_manifest(path: Path) -> list[Sample]:
+    """Read a manifest back into metadata-only Samples (`image` is None)."""
+    with path.open(encoding="utf-8") as f:
+        entries = cast(list[SampleManifestEntry], json.load(f))
+    return [Sample.from_manifest_entry(entry) for entry in entries]
