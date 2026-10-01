@@ -17,8 +17,8 @@ from src.data.schema import (
     SizePx,
     SourceDataset,
     make_sample_id,
+    read_manifest,
     write_manifest,
-    read_manifest
 )
 
 
@@ -129,7 +129,7 @@ def test_manifest_entry_is_json_serializable_and_excludes_pixels() -> None:
     assert json.loads(json.dumps(entry)) == entry
 
 
-def test_manifest_round_trip() -> None:
+def test_manifest_entry_round_trip() -> None:
     sample = make_sample()
     restored = Sample.from_manifest_entry(
         json.loads(json.dumps(sample.to_manifest_entry()))
@@ -146,10 +146,7 @@ def test_from_manifest_entry_rejects_unknown_source_dataset() -> None:
 
 
 def test_manifest_round_trip() -> None:
-    samples = [
-        make_sample(sample_id=f"mpiifacegaze/{x}")
-        for x in ["a", "b"]
-    ]
+    samples = [make_sample(sample_id=f"mpiifacegaze/{x}") for x in ["a", "b"]]
     path = Path("/tmp/test_manifest_round_trip.json")
 
     write_manifest(samples, path)
@@ -160,10 +157,7 @@ def test_manifest_round_trip() -> None:
 
 
 def test_manifest_is_byte_identical_across_runs() -> None:
-    samples = [
-        make_sample(sample_id=f"mpiifacegaze/{x}")
-        for x in ["a", "b"]
-    ]
+    samples = [make_sample(sample_id=f"mpiifacegaze/{x}") for x in ["a", "b"]]
     path_a = Path("/tmp/test_manifest_a.json")
     path_b = Path("/tmp/test_manifest_b.json")
 
@@ -173,11 +167,3 @@ def test_manifest_is_byte_identical_across_runs() -> None:
     assert path_a.read_bytes() == path_b.read_bytes()
     path_a.unlink()
     path_b.unlink()
-
-
-def test_manifest_entry_is_json_serializable_and_excludes_pixels() -> None:
-    sample = make_sample(sample_id="mpiifacegaze/a")
-    entry = sample.to_manifest_entry()
-
-    assert "image" not in entry
-    assert json.loads(json.dumps(entry)) == entry
