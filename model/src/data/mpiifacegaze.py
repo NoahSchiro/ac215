@@ -36,6 +36,7 @@ from src.data.schema import (
 )
 
 
+@cache
 def _load_calibration(
     subject_dir: Path,
 ) -> tuple[CameraIntrinsics, SizePx, SizeMm]:
@@ -62,9 +63,7 @@ def parse_mpii_sample(subject_dir: Path, line: str) -> Sample | None:
     try:
         fields = line.split()
         if len(fields) != 28:
-            raise ValueError(
-                f"expected 28 columns, got {len(fields)}"
-            )
+            raise ValueError(f"expected 28 columns, got {len(fields)}")
         image_path = subject_dir / fields[0]
         if not image_path.is_file():
             raise ValueError(f"image not found: {fields[0]}")
