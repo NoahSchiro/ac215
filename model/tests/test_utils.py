@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from src.data.schema import CameraIntrinsics, ImageArray, PointPx
+from src.data.schema import CameraIntrinsics, ImageArray, PointPx, SizePx
 from src.data.utils import (
     _GENERIC_FACE_MODEL,
     _MODEL_LANDMARK_IDS,
@@ -15,6 +15,7 @@ from src.data.utils import (
     head_pose_est,
     landmark_detection,
     normalize_face,
+    transform_label,
 )
 
 # I pulled this image from MPII
@@ -158,7 +159,9 @@ def test_eye_crops_follow_anatomical_convention() -> None:
     image = black_canvas()
     draw_red_square(image, 688.0, 316.4)  # marker on the subject's left eye only
 
-    _face, left_eye, right_eye, _R = normalize_face(image, landmarks, np.eye(3), t, NORM_INTRINSICS)
+    _face, left_eye, right_eye, _R = normalize_face(
+        image, landmarks, np.eye(3), t, NORM_INTRINSICS
+    )
 
     # crops centre on the warped iris positions (158, 70) and (66, 70)
     assert (left_eye[18, 30] == (255, 0, 0)).all()
@@ -191,3 +194,52 @@ def test_real_face_normalization_produces_valid_crops() -> None:
     assert np.array_equal(face, face2)
     assert np.array_equal(left, left2)
     assert np.array_equal(right, right2)
+
+
+def test_screen_fraction_is_resolution_independent() -> None:
+    fraction, direction = transform_label(
+        PointPx(x=562.5, y=1218.0),
+        SizePx(width=1125, height=2436),
+        np.eye(3)
+    )
+
+    assert fraction == pytest.approx((0.5, 0.5))
+    assert direction is None
+
+
+def test_out_of_bounds_targets_pass_through_unclamped() -> None:
+    fraction, _ = transform_label(
+        PointPx(x=-10.0, y=5000.0),
+        SizePx(width=1125, height=2436),
+        np.eye(3)
+    )
+
+    assert fraction == pytest.approx((-10.0 / 1125.0, 5000.0 / 2436.0))
+
+
+def test_direction_is_rotated_into_normalized_frame() -> None:
+    # R_virtual is a +90-degree rotation about z. Its transpose (what the
+    # function applies) rotates the camera x-axis into the normalized -y-axis
+    R_virtual = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    fraction, direction = transform_label(
+        PointPx(x=0.0, y=0.0),
+        SizePx(width=100, height=100),
+        R_virtual,
+        np.array([2.0, 0.0, 0.0]),  # unnormalized on purpose
+    )
+
+    assert fraction == (0.0, 0.0)
+    assert direction is not None
+    assert np.allclose(direction, [0.0, -1.0, 0.0])
+    assert np.isclose(np.linalg.norm(direction), 1.0)
+
+
+def test_rejects_degenerate_direction() -> None:
+    with pytest.raises(ValueError, match="non-zero"):
+        transform_label(
+            PointPx(x=0.0, y=0.0),
+            SizePx(width=100, height=100),
+            np.eye(3),
+            np.zeros(3),
+        )

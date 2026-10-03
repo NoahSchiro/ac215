@@ -6,6 +6,7 @@ Primary preprocessing tools:
 3. normalize_face warps the image into a canonical face/eye frame
 """
 
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ from mediapipe.tasks.python.vision import (
 )
 from numpy.typing import NDArray
 
-from src.data.schema import CameraIntrinsics, ImageArray, PointPx
+from src.data.schema import CameraIntrinsics, ImageArray, PointPx, SizePx
 
 
 def get_landmarker() -> Any:
@@ -153,7 +154,6 @@ def head_pose_est(
     return rotation, translation
 
 
-
 def normalize_face(
     image: ImageArray,
     landmarks: list[PointPx],
@@ -165,7 +165,7 @@ def normalize_face(
 
     We place a virtual camera at a fixed position and normalize the face to
     be at a fixed position away from the camera with a fixed rotation
-    
+
     Args:
         image: input RGB image.
         landmarks: pixel-space Face Mesh points (needs the iris points 468/473).
@@ -187,16 +187,16 @@ def normalize_face(
             f" (>= {max(left_iris_id, right_iris_id) + 1} points),"
             f" got {len(landmarks)}"
         )
-    
+
     def normalize(v: NDArray[np.float64]) -> NDArray[np.float64]:
         return v / np.linalg.norm(v)
-    
+
     # Fixed camera parameters for normalization. These
     # need be identical for every sample from every dataset
     # in both python and typescript
-    norm_dist = 60.0 # (cm)
-    norm_focal = 960.0 # (cm)
-    face_size = 224 # (px)
+    norm_dist = 60.0  # (cm)
+    norm_focal = 960.0  # (cm)
+    face_size = 224  # (px)
 
     # Virtual camera rotation:
     # z-axis = camera to face
@@ -211,23 +211,26 @@ def normalize_face(
 
     # Virtual camera center
     C_virtual = t - norm_dist * z_axis
-    K = np.array([ # camera specs
-        [intrinsics.focal_length_px, 0.0, intrinsics.principal_point.x],
-        [0.0, intrinsics.focal_length_px, intrinsics.principal_point.y],
-        [0.0, 0.0, 1.0],
-    ])
-    K_norm = np.array([ # virtual camera specs
-        [norm_focal, 0.0, face_size / 2],
-        [0.0, norm_focal, face_size / 2],
-        [0.0, 0.0, 1.0],
-    ])
+    K = np.array(
+        [  # camera specs
+            [intrinsics.focal_length_px, 0.0, intrinsics.principal_point.x],
+            [0.0, intrinsics.focal_length_px, intrinsics.principal_point.y],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    K_norm = np.array(
+        [  # virtual camera specs
+            [norm_focal, 0.0, face_size / 2],
+            [0.0, norm_focal, face_size / 2],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
     # H_norm is a translation matrix which answers: for each pixel captured by
     # a real camera, where would that be on on an image taken by our virtual camera
-    H_norm = (
-        norm_dist * K @ R_virtual @ np.linalg.inv(K_norm)
-        + (K @ C_virtual)[:, None] * np.array([[0.0, 0.0, 1.0]])
-    )
+    H_norm = norm_dist * K @ R_virtual @ np.linalg.inv(K_norm) + (K @ C_virtual)[
+        :, None
+    ] * np.array([[0.0, 0.0, 1.0]])
 
     # Finally we can apply the rotations / translations to our assets
     face = np.asarray(
@@ -261,3 +264,42 @@ def normalize_face(
         dtype=np.uint8,
     )
     return face, left, right, R_virtual
+
+
+def transform_label(
+    gaze_target_px: PointPx,
+    screen_size_px: SizePx,
+    R_virtual: NDArray[np.float64],
+    gaze_direction_cam: NDArray[np.float64] | None = None,
+) -> tuple[tuple[float, float], NDArray[np.float64] | None]:
+    """Convert a raw gaze label to match the normalized image.
+
+    We output two formats of labels 
+        - a fraction of the screen (x/W, y/H)
+        - Normalized gaze direction (the angle off of the z-axis)
+
+    Args:
+        gaze_target_px: raw on-screen gaze position.
+        screen_size_px: resolution of the screen the position refers to.
+        R_virtual: virtual camera rotation from `normalize_face`.
+        gaze_direction_cam: optional 3D gaze direction in the camera frame
+            (e.g. gt - fc when a dataset provides it) to also get the
+            angle-based label.
+
+    Returns:
+        (screen_fraction, direction_norm)
+    """
+    fraction = (
+        gaze_target_px.x / screen_size_px.width,
+        gaze_target_px.y / screen_size_px.height,
+    )
+
+    direction: NDArray[np.float64] | None = None
+    if gaze_direction_cam is not None:
+        direction = R_virtual.T @ np.asarray(gaze_direction_cam, dtype=np.float64)
+        length = float(np.linalg.norm(direction))
+        if not math.isfinite(length) or length == 0.0:
+            raise ValueError("gaze direction must be a finite, non-zero vector")
+        direction = direction / length
+
+    return fraction, direction
