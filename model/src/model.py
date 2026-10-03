@@ -1,6 +1,0 @@
-from torch import nn
-
-
-class GazeModel(nn.Module):
-    def __init__(self): ...
-    def forward(self, x): ...
