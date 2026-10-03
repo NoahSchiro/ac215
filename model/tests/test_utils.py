@@ -14,6 +14,7 @@ from src.data.utils import (
     get_landmarker,
     head_pose_est,
     landmark_detection,
+    normalize_face,
 )
 
 # I pulled this image from MPII
@@ -94,13 +95,11 @@ def test_recovers_known_pose_from_synthetic_projection() -> None:
     intrinsics = CameraIntrinsics(
         focal_length_px=1000.0, principal_point=PointPx(x=640.0, y=360.0)
     )
-    camera_matrix = np.array([
-        [1000.0, 0.0, 640.0],
-        [0.0, 1000.0, 360.0],
-        [0.0, 0.0, 1.0]]
+    camera_matrix = np.array(
+        [[1000.0, 0.0, 640.0], [0.0, 1000.0, 360.0], [0.0, 0.0, 1.0]]
     )
     rvec_true = np.array([[0.15], [-0.25], [0.05]])  # yaw/pitch/roll
-    tvec_true = np.array([[3.0], [-4.0], [60.0]])    # x/y/z
+    tvec_true = np.array([[3.0], [-4.0], [60.0]])  # x/y/z
 
     landmarks = make_landmarks_from_projection(rvec_true, tvec_true, camera_matrix)
     r_mat, t_mat = head_pose_est(landmarks, intrinsics)
@@ -132,3 +131,63 @@ def test_rejects_landmark_lists_without_the_model_points() -> None:
 
     with pytest.raises(ValueError, match="Face Mesh"):
         head_pose_est([PointPx(x=0.0, y=0.0)] * 10, intrinsics)
+
+
+NORM_INTRINSICS = CameraIntrinsics(
+    focal_length_px=1000.0, principal_point=PointPx(x=640.0, y=360.0)
+)
+NORM_K = np.array([[1000.0, 0.0, 640.0], [0.0, 1000.0, 360.0], [0.0, 0.0, 1.0]])
+
+
+def black_canvas() -> ImageArray:
+    return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+
+def draw_red_square(image: ImageArray, x: float, y: float, half: int = 4) -> None:
+    image[int(y) - half : int(y) + half, int(x) - half : int(x) + half] = (255, 0, 0)
+
+
+def test_eye_crops_follow_anatomical_convention() -> None:
+    """Subject's LEFT eye (image-right in non-mirrored frames) -> `left_eye`."""
+    t = np.array([0.0, 0.0, 60.0])
+    landmarks = make_landmarks_from_projection(np.zeros(3), t, NORM_K)
+    # iris positions ~ +-2.88 units off-centre, projected by K at depth 60
+    landmarks[473] = PointPx(x=688.0, y=316.4)  # subject's left -> image right
+    landmarks[468] = PointPx(x=592.0, y=316.4)  # subject's right -> image left
+
+    image = black_canvas()
+    draw_red_square(image, 688.0, 316.4)  # marker on the subject's left eye only
+
+    _face, left_eye, right_eye, _R = normalize_face(image, landmarks, np.eye(3), t, NORM_INTRINSICS)
+
+    # crops centre on the warped iris positions (158, 70) and (66, 70)
+    assert (left_eye[18, 30] == (255, 0, 0)).all()
+    assert (right_eye[18, 30] == (0, 0, 0)).all()
+
+
+def test_real_face_normalization_produces_valid_crops() -> None:
+    image = load_face_image()
+    model = get_landmarker()
+    landmarks = landmark_detection(model, image)
+
+    assert landmarks is not None
+    intrinsics = CameraIntrinsics(
+        focal_length_px=996.4509,
+        principal_point=PointPx(x=624.6634, y=364.0874),
+    )
+    R, t = head_pose_est(landmarks, intrinsics)
+
+    face, left, right, _ = normalize_face(image, landmarks, R, t, intrinsics)
+
+    assert face.shape == (224, 224, 3)
+    assert left.shape == (36, 60, 3)
+    assert right.shape == (36, 60, 3)
+    assert face.max() > 0
+    assert left.max() > 0
+    assert right.max() > 0
+    assert not np.array_equal(left, right)
+
+    face2, left2, right2, _ = normalize_face(image, landmarks, R, t, intrinsics)
+    assert np.array_equal(face, face2)
+    assert np.array_equal(left, left2)
+    assert np.array_equal(right, right2)
