@@ -1,29 +1,15 @@
 from pathlib import Path
 
-from src.data.mpiifacegaze import parse_mpii
-from src.data.schema import write_manifest
-from src.data.utils import filter_dataset
-
-DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze"
-OUTPUT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "processed"
-    / "mpiifacegaze"
-    / "filtered_manifest.json"
-)
-
+from src.data.mpiifacegaze import MPII
 
 def main() -> None:
-    print(f"loading MPIIFaceGaze from {DATA_ROOT}")
-    samples = parse_mpii(DATA_ROOT)
+    data_root = Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze"
 
-    print(f"filtering {len(samples)} samples")
-    good = filter_dataset(samples)
+    train = MPII(list(range(0, 13)), data_root)
+    val = MPII(14, data_root)
 
-    write_manifest(good, OUTPUT_PATH)
-    print(f"wrote {len(good)} good samples to {OUTPUT_PATH}")
-
+    print(train[0].keys())
+    print(val[0].keys())
 
 if __name__ == "__main__":
     main()

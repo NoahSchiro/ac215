@@ -1,15 +1,13 @@
-"""Tests for the MPIIFaceGaze parser.
+"""Tests for the MPIIFaceGaze dataset."""
 
-Uses a synthetic dataset
-"""
-
+import shutil
 from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy.io import savemat
 
-from src.data.mpiifacegaze import parse_mpii, parse_mpii_sample
+from src.data.mpiifacegaze import MPII, parse_mpii, parse_mpii_sample
 from src.data.schema import DeviceType, PointPx, SizePx, SourceDataset
 
 _CAM_MATRIX = np.array([[1000.0, 0.0, 640.0], [0.0, 1040.0, 360.0], [0.0, 0.0, 1.0]])
@@ -96,3 +94,105 @@ def test_parse_dataset_is_deterministic(tmp_path: Path) -> None:
     second = parse_mpii(tmp_path)
 
     assert first == second
+
+
+# p00's real calibration; the fixture face is one of p00's images
+_CAM = np.array([[996.4509, 0.0, 624.6634], [0.0, 998.166, 364.0874], [0.0, 0.0, 1.0]])
+
+
+def make_mini_dataset(root: Path) -> Path:
+    """Two subjects (p00, p01) with one detectable image each."""
+    face = Path(__file__).parent / "data" / "face.jpg"
+    for p in ("p00", "p01"):
+        subj = root / p
+        (subj / "day01").mkdir(parents=True, exist_ok=True)
+        shutil.copy(face, subj / "day01" / "0005.jpg")
+        calib = subj / "Calibration"
+        calib.mkdir(exist_ok=True)
+        savemat(
+            calib / "Camera.mat",
+            {"cameraMatrix": _CAM, "distCoeffs": np.zeros((1, 5))},
+        )
+        savemat(
+            calib / "screenSize.mat",
+            {
+                "width_pixel": 1440.0,
+                "height_pixel": 900.0,
+                "width_mm": 286.5,
+                "height_mm": 179.0,
+            },
+        )
+        line = " ".join(
+            [
+                "day01/0005.jpg",
+                "1148 290",
+                *["0"] * 12,
+                *["0"] * 6,
+                *["0"] * 3,
+                *["0"] * 3,
+                "left",
+            ]
+        )
+        (subj / f"{p}.txt").write_text(line + "\n")
+    return root
+
+
+@pytest.fixture
+def mini_dataset(tmp_path: Path) -> Path:
+    """Synthetic two-subject dataset; the filtered manifest lands inside it."""
+    return make_mini_dataset(tmp_path / "MPIIFaceGaze")
+
+
+def test_builds_manifest_on_first_use(mini_dataset: Path) -> None:
+    manifest = mini_dataset / "mpii_filtered.json"
+    assert not manifest.is_file()
+
+    ds = MPII([0, 1], dataset_root=mini_dataset)
+
+    assert manifest.is_file()  # built and cached for later runs
+    assert len(ds) == 2
+
+
+def test_loads_existing_manifest_without_raw_data(mini_dataset: Path) -> None:
+    MPII([0, 1], dataset_root=mini_dataset)  # first use builds the manifest
+    for child in mini_dataset.iterdir():  # raw data disappears, manifest stays
+        if child.name != "mpii_filtered.json":
+            shutil.rmtree(child)
+
+    ds = MPII([0, 1], dataset_root=mini_dataset)  # second use loads manifest only
+
+    assert len(ds) == 2
+
+
+def test_getitem_computes_crops_and_label(mini_dataset: Path) -> None:
+    ds = MPII(0, dataset_root=mini_dataset)
+
+    item = ds[0]
+
+    assert item["sample_id"] == "mpiifacegaze/p00/day01/0005"
+    assert item["face"].shape == (224, 224, 3)
+    assert item["left_eye"].shape == (36, 60, 3)
+    assert item["right_eye"].shape == (36, 60, 3)
+    # label = raw gaze target / screen size, from the annotation line
+    assert item["label"].dtype == np.float32
+    assert item["label"] == pytest.approx(
+        np.array([1148 / 1440, 290 / 900], dtype=np.float32)
+    )
+    assert np.allclose(item["R_norm"] @ item["R_norm"].T, np.eye(3), atol=1e-9)
+
+
+def test_participants_select_subjects(mini_dataset: Path) -> None:
+    ds_p00 = MPII(0, dataset_root=mini_dataset)
+    ds_p01 = MPII([1], dataset_root=mini_dataset)
+
+    assert len(ds_p00) == 1
+    assert len(ds_p01) == 1
+    assert {s.subject_id for s in ds_p00.samples} == {"p00"}
+    assert {s.subject_id for s in ds_p01.samples} == {"p01"}
+
+
+def test_rejects_out_of_range_participants(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="p00..p14"):
+        MPII(15, dataset_root=tmp_path)
+    with pytest.raises(ValueError, match="p00..p14"):
+        MPII(-1, dataset_root=tmp_path)

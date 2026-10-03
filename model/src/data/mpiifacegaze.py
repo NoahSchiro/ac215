@@ -1,28 +1,18 @@
-"""Parse raw MPIIFaceGaze files into Sample records.
-
-This module is the only code that knows the MPIIFaceGaze on-disk format.
-
-Dataset layout (subjects p00-p14):
-
-    <root>/pXX/pXX.txt                      one line per image, 28 whitespace-separated columns
-    <root>/pXX/dayNN/NNNN.jpg               face crop
-    <root>/pXX/Calibration/Camera.mat       cameraMatrix (3x3, MATLAB v5)
-    <root>/pXX/Calibration/screenSize.mat   screen size in pixels and millimeters
-
-Of the 28 annotation columns we only use 0 (image path, relative to the
-subject folder) and 1-2 (gaze target on the screen in pixels). The rest
-(landmarks, dataset head pose, 3D face center / gaze target, eval eye)
-is ignored: Steps 2-3 recompute it, and nothing dataset-specific may
-leak past the schema.
+"""Parse raw MPIIFaceGaze files into Sample records. Contains
+the MPIIDataset class as well
 """
 
 import math
+import os
 import re
 from functools import cache
 from pathlib import Path
+from typing import Any
 
+import cv2
 import numpy as np
 from scipy.io import loadmat
+from torch.utils.data import Dataset
 
 from src.data.schema import (
     CameraIntrinsics,
@@ -33,6 +23,16 @@ from src.data.schema import (
     SizePx,
     SourceDataset,
     make_sample_id,
+    read_manifest,
+    write_manifest,
+)
+from src.data.utils import (
+    filter_dataset,
+    get_landmarker,
+    head_pose_est,
+    landmark_detection,
+    normalize_face,
+    transform_label,
 )
 
 
@@ -117,3 +117,85 @@ def parse_mpii(root: Path) -> list[Sample]:
 
     print(f"parsed {len(samples)} datapoints, dropped {dropped} of {total}")
     return samples
+
+
+class MPII(Dataset):
+    """Quality-filtered MPIIFaceGaze as a torch Dataset.
+
+    Args:
+        participants: participant number(s) to include (0..14 -> p00..p14).
+            Accepts a single int or a list of ints
+        root: raw MPIIFaceGaze root, only needed when the filtered manifest
+            does not exist yet (it is built and cached on first use).
+    """
+
+    def __init__(
+        self,
+        participants: int | list[int],
+        dataset_root: os.PathLike[str],
+    ) -> None:
+
+        manifest_path = Path(dataset_root) / "mpii_filtered.json"
+
+        # MPIIFaceGaze has 15 participants: p00..p14
+        num_participants = 15
+
+        if isinstance(participants, int):
+            participants = [participants]
+        for p in participants:
+            if not 0 <= p < num_participants:
+                raise ValueError(
+                    f"participant {p} is out of range: MPIIFaceGaze has"
+                    f" p00..p{num_participants - 1}"
+                )
+        self.participants = sorted({f"p{p:02d}" for p in participants})
+
+        if manifest_path.is_file():
+            self.samples = read_manifest(manifest_path)
+        else:
+            print(f"no manifest at {manifest_path}; building it from the raw dataset")
+            self.samples = filter_dataset(parse_mpii(Path(dataset_root)))
+            write_manifest(self.samples, manifest_path)
+
+        wanted = set(self.participants)
+        self.samples = [s for s in self.samples if s.subject_id in wanted]
+
+        self.landmarker: Any = None  # created lazily, per worker process
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        sample = self.samples[idx]
+
+        bgr = cv2.imread(str(sample.image_path))
+        # Should never happen
+        if bgr is None:
+            raise FileNotFoundError(
+                f"image missing at training time: {sample.image_path}"
+            )
+        image = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
+
+        if self.landmarker is None:
+            self.landmarker = get_landmarker()
+        landmarks = landmark_detection(self.landmarker, image)
+        # Should never happen
+        if landmarks is None:
+            raise RuntimeError(f"face detection failed for {sample.sample_id}")
+
+        R, t = head_pose_est(landmarks, sample.camera_intrinsics)
+        face, left_eye, right_eye, R_virtual = normalize_face(
+            image, landmarks, R, t, sample.camera_intrinsics
+        )
+        fraction, _ = transform_label(
+            sample.gaze_target_px, sample.screen_size_px, R_virtual
+        )
+
+        return {
+            "sample_id": sample.sample_id,
+            "face": face,
+            "left_eye": left_eye,
+            "right_eye": right_eye,
+            "label": np.array(fraction, dtype=np.float32),
+            "R_norm": R_virtual,
+        }

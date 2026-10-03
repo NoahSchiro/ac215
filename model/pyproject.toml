@@ -23,6 +23,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.16.7",
     "scipy-stubs>=1.18.1.1",
+    "types-tqdm>=4.70.0.20260906",
 ]
 
 [mypy]
