@@ -1,16 +1,28 @@
 """Tests for landmark_detection."""
 
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
 import pytest
 from PIL import Image
 
-from src.data.schema import CameraIntrinsics, ImageArray, PointPx, SizePx
+from src.data.schema import (
+    CameraIntrinsics,
+    DeviceType,
+    ImageArray,
+    PointPx,
+    Sample,
+    SizeMm,
+    SizePx,
+    SourceDataset,
+    make_sample_id,
+)
 from src.data.utils import (
     _GENERIC_FACE_MODEL,
     _MODEL_LANDMARK_IDS,
+    filter_dataset,
     get_landmarker,
     head_pose_est,
     landmark_detection,
@@ -198,9 +210,7 @@ def test_real_face_normalization_produces_valid_crops() -> None:
 
 def test_screen_fraction_is_resolution_independent() -> None:
     fraction, direction = transform_label(
-        PointPx(x=562.5, y=1218.0),
-        SizePx(width=1125, height=2436),
-        np.eye(3)
+        PointPx(x=562.5, y=1218.0), SizePx(width=1125, height=2436), np.eye(3)
     )
 
     assert fraction == pytest.approx((0.5, 0.5))
@@ -209,9 +219,7 @@ def test_screen_fraction_is_resolution_independent() -> None:
 
 def test_out_of_bounds_targets_pass_through_unclamped() -> None:
     fraction, _ = transform_label(
-        PointPx(x=-10.0, y=5000.0),
-        SizePx(width=1125, height=2436),
-        np.eye(3)
+        PointPx(x=-10.0, y=5000.0), SizePx(width=1125, height=2436), np.eye(3)
     )
 
     assert fraction == pytest.approx((-10.0 / 1125.0, 5000.0 / 2436.0))
@@ -243,3 +251,63 @@ def test_rejects_degenerate_direction() -> None:
             np.eye(3),
             np.zeros(3),
         )
+
+
+def make_filter_sample(**overrides: Any) -> Sample:
+    """A sample pointing at the real fixture image, so detection succeeds."""
+    values: dict[str, Any] = {
+        "sample_id": make_sample_id(SourceDataset.MPIIFaceGaze, "p00", "day01", "0005"),
+        "source_dataset": SourceDataset.MPIIFaceGaze,
+        "subject_id": "p00",
+        "image_path": FACE_IMAGE_PATH,
+        "camera_intrinsics": CameraIntrinsics(
+            focal_length_px=996.4509,
+            principal_point=PointPx(x=624.6634, y=364.0874),
+        ),
+        "screen_size_mm": SizeMm(width=286.5, height=179.0),
+        "screen_size_px": SizePx(width=1125, height=2436),
+        "gaze_target_px": PointPx(x=562.5, y=1218.0),
+        "device_type": DeviceType.Laptop,
+    }
+    values.update(overrides)
+    return Sample(**values)
+
+
+def test_filter_keeps_good_sample(capsys: pytest.CaptureFixture[str]) -> None:
+    kept = filter_dataset([make_filter_sample()])
+
+    assert len(kept) == 1
+    assert "filtered 1/1 samples (0 dropped)" in capsys.readouterr().out
+
+
+def test_filter_drops_gaze_out_of_bounds(capsys: pytest.CaptureFixture[str]) -> None:
+    bad = make_filter_sample(gaze_target_px=PointPx(x=5000.0, y=1218.0))
+
+    kept = filter_dataset([make_filter_sample(), bad])
+
+    assert len(kept) == 1
+    out = capsys.readouterr().out
+    assert "gaze_out_of_bounds" in out
+    assert "mpiifacegaze / gaze_out_of_bounds: 1" in out
+
+
+def test_filter_drops_unreadable_image(capsys: pytest.CaptureFixture[str]) -> None:
+    sample = make_filter_sample(image_path=Path("does/not/exist.jpg"))
+
+    kept = filter_dataset([sample])
+
+    assert kept == []
+    assert "image_unreadable" in capsys.readouterr().out
+
+
+def test_filter_drops_faces_it_cannot_detect(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    noise = tmp_path / "noise.jpg"
+    rng = np.random.default_rng(0)
+    Image.fromarray(rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)).save(noise)
+
+    kept = filter_dataset([make_filter_sample(image_path=noise)])
+
+    assert kept == []
+    assert "face_not_detected" in capsys.readouterr().out
