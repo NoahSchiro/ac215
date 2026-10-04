@@ -1,0 +1,108 @@
+.calibration {
+  position: fixed;
+  inset: 0;
+  background: #0b0b0f;
+  color: #e5e7eb;
+  font-family: var(--sans);
+  overflow: hidden;
+  user-select: none;
+}
+
+.calibration video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.calibration-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  max-width: 28rem;
+  padding: 1.5rem;
+}
+
+.calibration-status h2 {
+  margin: 0 0 0.5rem;
+  color: #f9fafb;
+  font-size: 1.25rem;
+}
+
+.calibration-status p {
+  margin: 0 0 1rem;
+}
+
+.calibration-status button {
+  font: inherit;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #4b5563;
+  background: #1f2937;
+  color: #f9fafb;
+  cursor: pointer;
+  margin: 0 0.25rem;
+}
+
+.calibration-status button:hover {
+  background: #374151;
+}
+
+.calibration-hud {
+  position: absolute;
+  bottom: 2rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.95rem;
+  color: #9ca3af;
+}
+
+.calibration-hud strong {
+  color: #f9fafb;
+  font-weight: 600;
+}
+
+.calibration-hud .capturing {
+  color: #fbbf24;
+}
+
+.calibration-hud .capture-error {
+  color: #f87171;
+}
+
+.crosshair {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.crosshair-ring {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+}
+
+.crosshair-line {
+  position: absolute;
+  background: #22d3ee;
+}
+
+.crosshair-line.horizontal {
+  width: 56px;
+  height: 2px;
+  margin: -1px 0 0 -28px;
+}
+
+.crosshair-line.vertical {
+  width: 2px;
+  height: 56px;
+  margin: -28px 0 0 -1px;
+}
