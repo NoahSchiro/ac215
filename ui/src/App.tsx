@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Calibration } from './calibration/Calibration'
+import { exitFullscreen } from './calibration/fullscreen'
 import type { CalibrationResult } from './calibration/points'
 import { HomeScreen } from './home/HomeScreen'
 import { MazeScreen } from './maze/MazeScreen'
@@ -29,10 +30,12 @@ function App() {
 
   const finishCalibration = useCallback((result: CalibrationResult) => {
     setCalibration(result)
+    void exitFullscreen()
     setView('home')
   }, [])
 
   const cancelCalibration = useCallback(() => {
+    void exitFullscreen()
     setView('home')
   }, [])
 

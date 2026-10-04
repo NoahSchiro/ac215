@@ -16,8 +16,21 @@ vi.mock('./calibration/Calibration', () => ({
   },
 }))
 
+const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+let fullscreenElement: Element | null = null
+
 beforeEach(() => {
   calibrationProps = null
+  fullscreenElement = null
+  requestFullscreen.mockClear()
+  exitFullscreen.mockClear()
+  document.documentElement.requestFullscreen = requestFullscreen
+  document.exitFullscreen = exitFullscreen
+  Object.defineProperty(document, 'fullscreenElement', {
+    configurable: true,
+    get: () => fullscreenElement,
+  })
 })
 
 afterEach(() => {
@@ -55,18 +68,23 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Gaze Maze')
   })
 
-  it('opens the calibration screen', () => {
+  it('opens the calibration screen without requesting full screen itself', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /^Calibration/ }))
     expect(screen.getByTestId('calibration-screen')).toBeInTheDocument()
+    // Full screen is entered by the calibration screen after the camera
+    // permission prompt, so the prompt is never hidden (Safari).
+    expect(requestFullscreen).not.toHaveBeenCalled()
   })
 
   it('returns home with the result after calibration completes', async () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /^Calibration/ }))
+    fullscreenElement = document.documentElement
 
     await act(async () => calibrationProps!.onComplete(fakeResult(27)))
 
+    expect(exitFullscreen).toHaveBeenCalledTimes(1)
     expect(screen.getByText(/27 frames captured/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Recalibrate/ })).toBeInTheDocument()
   })
@@ -74,11 +92,20 @@ describe('App', () => {
   it('returns home without a result when calibration is cancelled', async () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /^Calibration/ }))
+    fullscreenElement = document.documentElement
 
     await act(async () => calibrationProps!.onCancel())
 
+    expect(exitFullscreen).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/frames captured/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Calibration/ })).toBeInTheDocument()
+  })
+
+  it('does not call exitFullscreen when not in full screen', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: /^Calibration/ }))
+    await act(async () => calibrationProps!.onCancel())
+    expect(exitFullscreen).not.toHaveBeenCalled()
   })
 
   it('replaces the previous result on recalibration', async () => {
