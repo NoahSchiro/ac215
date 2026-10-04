@@ -1,0 +1,46 @@
+.home {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 10vh 1.5rem 3rem;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.home-tagline {
+  margin-bottom: 2.5rem;
+}
+
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.home-card {
+  text-align: left;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.home-card:hover,
+.home-card:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  outline: none;
+}
+
+.home-card h2 {
+  margin-bottom: 0.25rem;
+}
+
+.home-note {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
