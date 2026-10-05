@@ -9,7 +9,7 @@ from src.data.mpiifacegaze import MPII
 def main() -> None:
     data_root = Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze"
 
-    data = MPII(list(range(0, 13)), data_root)
+    data = MPII(list(range(13)), data_root)
 
     start = time()
     for i in range(1000):

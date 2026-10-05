@@ -14,7 +14,7 @@ import tarfile
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 from urllib.request import urlretrieve
@@ -485,25 +485,31 @@ def build_webdataset(
         print(f"  {dataset} / {reason}: {count}")
 
 
-@lru_cache(maxsize=8)
-def open_shard(shard: str) -> tarfile.TarFile:
-    """Open a shard and read its member index once. Handles are cached per
-    process (DataLoader workers each get their own copy)."""
-    tf = tarfile.open(shard, "r")  # noqa: SIM115 handle is cached, closed on eviction
-    # Loads the index. Later lookups don't rescan the file
-    tf.getmembers()  
-    return tf
+@cache
+def shard_index(shard: str) -> dict[str, tuple[int, int]]:
+    """Scan a shard once: member name -> (data offset, size) for every member.
+
+    The index is tiny (a few ints per member), so caching it for every
+    shard costs nothing and reads never have to rescan the file or keep
+    tarfile handles open.
+    """
+    with tarfile.open(shard, "r") as tf:
+        return {
+            info.name: (info.offset_data, info.size)
+            for info in tf
+            if info.isfile()
+        }
 
 
 def read_shard_member(shard: str, name: str) -> bytes:
     """Read one member's bytes from a shard."""
-    try:
-        f = open_shard(shard).extractfile(name)
-    except KeyError as exc:
-        raise FileNotFoundError(f"member {name} missing in {shard}") from exc
-    if f is None:
-        raise FileNotFoundError(f"member {name} is not a regular file in {shard}")
-    return f.read()
+    index = shard_index(shard)
+    if name not in index:
+        raise FileNotFoundError(f"member {name} missing in {shard}")
+    offset, size = index[name]
+    with open(shard, "rb") as f:
+        f.seek(offset)
+        return f.read(size)
 
 
 def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
