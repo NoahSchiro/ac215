@@ -1,15 +1,18 @@
 /* Container for the entire maze grid */
 .maze {
   display: grid;
-  grid-template-columns: repeat(10, 40px);
-  grid-template-rows: repeat(10, 40px);
-  width: fit-content;
-  margin: 40px auto;
+
+  /* Fit the available width or height, whichever is smaller. */
+  width: min(90vw, max(0px, calc(100dvh - 220px)));
+  aspect-ratio: 1;
+
+  margin: 20px auto;
 }
 
-/* Each individual cell in the maze */
 .maze-cell {
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
 }

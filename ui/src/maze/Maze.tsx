@@ -3,8 +3,8 @@ import { generateMaze } from './mazeGenerator'
 import './Maze.css'
 
 // Number of rows and columns in the maze.
-const ROWS = 10
-const COLS = 10
+const ROWS = 15
+const COLS = 15
 
 export default function Maze() {
   // Generate the maze once when the component is first created.
@@ -13,7 +13,11 @@ export default function Maze() {
   const maze = useMemo(() => generateMaze(ROWS, COLS), [])
 
   return (
-    <div className="maze">
+    <div 
+    className="maze" 
+    style={{gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+    gridTemplateRows: `repeat(${ROWS}, 1fr)`,
+    }}>
       {maze.map((row) =>
         row.map((cell) => (
           <div
