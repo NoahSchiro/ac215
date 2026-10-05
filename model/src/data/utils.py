@@ -309,13 +309,12 @@ def transform_label(
     return fraction, direction
 
 
+def check_sample(
+    landmarker: Any, sample: Sample, max_reproj: float = 0.1 
+) -> dict[str, Any] | str:
+    """Run every preprocessing step on one sample.
 
-def filter_dataset(
-    samples: list[Sample], num_threads: int | None = None
-) -> list[Sample]:
-    """Drop samples that fail quality checks; return the survivors.
-
-    Checks (cheapest first):
+    Quality checks first (cheapest first):
     - gaze target inside the screen
     - image readable
     - face detection succeeds
@@ -323,7 +322,99 @@ def filter_dataset(
     - reprojection error
     - iris points near their eye corners
 
-    Runs on a thread pool. Each worker thread owns its own
+    Samples passing all checks continue through face normalization and
+    the label transform.
+
+    Args:
+        landmarker: FaceLandmarker instance (e.g. from `get_landmarker`).
+        sample: parsed sample whose image lives at `image_path`.
+        max_reproj: mean reprojection error, as a fraction of the
+            projected eye-corner distance, above which the sample is
+            dropped.
+
+    Returns:
+        The per-item dict
+        ``{"sample_id", "face", "left_eye", "right_eye", "label", "R_norm"}``
+        or a string naming the reason the sample was dropped.
+    """
+    fx = sample.gaze_target_px.x / sample.screen_size_px.width
+    fy = sample.gaze_target_px.y / sample.screen_size_px.height
+    if not (math.isfinite(fx) and math.isfinite(fy)) or not (
+        0 <= fx <= 1 and 0 <= fy <= 1
+    ):
+        return "gaze_out_of_bounds"
+
+    image_bgr = cv2.imread(str(sample.image_path))
+    if image_bgr is None:
+        return "image_unreadable"
+    image = np.asarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
+
+    landmarks = landmark_detection(landmarker, image)
+    if landmarks is None:
+        return "face_not_detected"
+
+    try:
+        R, t = head_pose_est(landmarks, sample.camera_intrinsics)
+    except ValueError:
+        return "pose_failed"
+
+    # reprojection error, normalized by the projected eye-corner distance
+    camera_focal = sample.camera_intrinsics.focal_length_px
+    camera_x = sample.camera_intrinsics.principal_point.x
+    camera_y = sample.camera_intrinsics.principal_point.y
+    K = np.array([
+        [camera_focal, 0.0, camera_x],
+        [0.0, camera_focal, camera_y],
+        [0.0, 0.0, 1.0],
+    ])
+    observed = np.array(
+        [[landmarks[i].x, landmarks[i].y] for i in _MODEL_LANDMARK_IDS]
+    )
+    projected, _ = cv2.projectPoints(
+        _GENERIC_FACE_MODEL, cv2.Rodrigues(R)[0], t, K, None
+    )
+    projected = projected.reshape(-1, 2)
+    eye_span = float(np.linalg.norm(projected[0] - projected[3]))
+    reproj = float(np.linalg.norm(projected - observed, axis=1).mean()) / max(
+        eye_span, 1e-9
+    )
+    if reproj > max_reproj:
+        return "reprojection_error"
+
+    # iris centres must sit near their eye corners' bounding box
+    for iris_id, corner_a, corner_b in ((468, 33, 133), (473, 263, 362)):
+        a, b, iris = landmarks[corner_a], landmarks[corner_b], landmarks[iris_id]
+        margin = 0.25 * max(abs(b.x - a.x), abs(b.y - a.y))
+        in_box = (
+            min(a.x, b.x) - margin <= iris.x <= max(a.x, b.x) + margin
+            and min(a.y, b.y) - margin <= iris.y <= max(a.y, b.y) + margin
+        )
+        if not in_box:
+            return "eyes_off_face"
+
+    face, left_eye, right_eye, R_virtual = normalize_face(
+        image, landmarks, R, t, sample.camera_intrinsics
+    )
+    fraction, _ = transform_label(
+        sample.gaze_target_px, sample.screen_size_px, R_virtual
+    )
+    return {
+        "sample_id": sample.sample_id,
+        "face": face,
+        "left_eye": left_eye,
+        "right_eye": right_eye,
+        "label": np.array(fraction, dtype=np.float32),
+        "R_norm": R_virtual,
+    }
+
+
+def filter_dataset(
+    samples: list[Sample], num_threads: int | None = None
+) -> list[Sample]:
+    """Drop samples that fail quality checks; return the survivors.
+
+    Runs `check_sample` on every sample; a string result is the drop
+    reason. Runs on a thread pool. Each worker thread owns its own
     FaceLandmarker instance. num_threads defaults to the number of CPU
     cores; drops are printed (in input order) with a summary at the end.
     """
@@ -340,76 +431,19 @@ def filter_dataset(
                 thread_local.landmarker = get_landmarker()
         return thread_local.landmarker
 
-    def check_sample(sample: Sample, max_reproj: float) -> str | None:
-        """Run every quality check on one sample; return the drop reason or None."""
-        fx = sample.gaze_target_px.x / sample.screen_size_px.width
-        fy = sample.gaze_target_px.y / sample.screen_size_px.height
-        if not (math.isfinite(fx) and math.isfinite(fy)) or not (
-            0 <= fx <= 1 and 0 <= fy <= 1
-        ):
-            return "gaze_out_of_bounds"
-
-        image_bgr = cv2.imread(str(sample.image_path))
-        if image_bgr is None:
-            return "image_unreadable"
-        image = np.asarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
-
-        landmarks = landmark_detection(thread_landmarker(), image)
-        if landmarks is None:
-            return "face_not_detected"
-
-        try:
-            R, t = head_pose_est(landmarks, sample.camera_intrinsics)
-        except ValueError:
-            return "pose_failed"
-
-        # reprojection error, normalized by the projected eye-corner distance
-        camera_focal = sample.camera_intrinsics.focal_length_px
-        camera_x = sample.camera_intrinsics.principal_point.x
-        camera_y = sample.camera_intrinsics.principal_point.y
-        K = np.array([
-            [camera_focal, 0.0, camera_x],
-            [0.0, camera_focal, camera_y],
-            [0.0, 0.0, 1.0],
-        ])
-        observed = np.array(
-            [[landmarks[i].x, landmarks[i].y] for i in _MODEL_LANDMARK_IDS]
-        )
-        projected, _ = cv2.projectPoints(
-            _GENERIC_FACE_MODEL, cv2.Rodrigues(R)[0], t, K, None
-        )
-        projected = projected.reshape(-1, 2)
-        eye_span = float(np.linalg.norm(projected[0] - projected[3]))
-        reproj = float(np.linalg.norm(projected - observed, axis=1).mean()) / max(
-            eye_span, 1e-9
-        )
-        if reproj > max_reproj:
-            return "reprojection_error"
-
-        # iris centres must sit near their eye corners' bounding box
-        for iris_id, corner_a, corner_b in ((468, 33, 133), (473, 263, 362)):
-            a, b, iris = landmarks[corner_a], landmarks[corner_b], landmarks[iris_id]
-            margin = 0.25 * max(abs(b.x - a.x), abs(b.y - a.y))
-            in_box = (
-                min(a.x, b.x) - margin <= iris.x <= max(a.x, b.x) + margin
-                and min(a.y, b.y) - margin <= iris.y <= max(a.y, b.y) + margin
-            )
-            if not in_box:
-                return "eyes_off_face"
-
-        return None
-
     kept: list[Sample] = []
     drop_counts: Counter[tuple[str, str]] = Counter()
-    max_reproj = 0.10  # mean reprojection error as a fraction of the eye span
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = pool.map(lambda s: check_sample(s, max_reproj), samples)
-        for sample, reason in tqdm(zip(samples, results), total=len(samples)):
-            if reason is None:
-                kept.append(sample)
+        results = pool.map(
+            lambda s: check_sample(thread_landmarker(), s),
+            samples,
+        )
+        for sample, result in tqdm(zip(samples, results), total=len(samples)):
+            if isinstance(result, str):
+                drop_counts[(sample.source_dataset.value, result)] += 1
             else:
-                drop_counts[(sample.source_dataset.value, reason)] += 1
+                kept.append(sample)
 
     print(
         f"filtered {len(kept)}/{len(samples)} samples ({len(samples) - len(kept)} dropped)"
