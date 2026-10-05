@@ -1,0 +1,15 @@
+/* Container for the entire maze grid */
+.maze {
+  display: grid;
+  grid-template-columns: repeat(10, 40px);
+  grid-template-rows: repeat(10, 40px);
+  width: fit-content;
+  margin: 40px auto;
+}
+
+/* Each individual cell in the maze */
+.maze-cell {
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+}
