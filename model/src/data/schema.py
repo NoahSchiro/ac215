@@ -34,7 +34,7 @@ class SourceDataset(StrEnum):
     """Dataset a sample originated from. Extension point for new adapters."""
 
     MPIIFaceGaze = "mpiifacegaze"
-    # GazeCapture = "gazecapture" #eventually...
+    GazeCapture = "gazecapture"
 
 
 class DeviceType(StrEnum):

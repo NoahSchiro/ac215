@@ -1,16 +1,16 @@
 from pathlib import Path
 
 from src.data.mpiifacegaze import MPII
+from src.data.gazecapture import parse_gazecapture
 
 
 def main() -> None:
-    data_root = Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze"
+    data_root = Path(__file__).resolve().parents[1] / "data" / "GazeCapture"
 
-    train = MPII(list(range(13)), data_root)
-    val = MPII(14, data_root)
+    data = parse_gazecapture(data_root)
 
-    print(train[0].keys())
-    print(val[0].keys())
+    print(len(data))
+    print(data[0])
 
 if __name__ == "__main__":
     main()
