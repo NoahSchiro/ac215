@@ -24,6 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import webdataset as wds
 from torch.utils.data import Dataset
 
 from src.data.schema import (
@@ -35,13 +36,10 @@ from src.data.schema import (
     SizePx,
     SourceDataset,
     make_sample_id,
-    read_manifest,
-    write_manifest,
 )
 from src.data.utils import (
-    check_sample,
-    filter_dataset,
-    get_landmarker,
+    build_webdataset,
+    read_webdataset_sample,
 )
 
 _OFFICIAL_SPLITS = ("train", "val", "test")
@@ -268,9 +266,8 @@ class GazeCapture(Dataset):
     Args:
         splits: split(s) to include ("train", "val", "test"). Accepts a
             single string or a list of strings
-        dataset_root: raw GazeCapture root, only needed when the filtered
-            manifest does not exist yet (it is built and cached on first
-            use).
+        dataset_root: raw GazeCapture root, only needed when the webdataset
+            cache does not exist yet (it is built and cached on first use).
     """
 
     def __init__(
@@ -279,7 +276,7 @@ class GazeCapture(Dataset):
         dataset_root: os.PathLike[str],
     ) -> None:
 
-        manifest_path = Path(dataset_root) / "gazecapture_filtered.json"
+        wds_path = Path(dataset_root) / "GazeCapture_wd"
 
         if isinstance(splits, str):
             splits = [splits]
@@ -291,12 +288,17 @@ class GazeCapture(Dataset):
                 )
         self.splits = sorted(set(splits))
 
-        if manifest_path.is_file():
-            self.samples = read_manifest(manifest_path)
-        else:
-            print(f"no manifest at {manifest_path}; building it from the raw dataset")
-            self.samples = filter_dataset(parse_gazecapture(Path(dataset_root)))
-            write_manifest(self.samples, manifest_path)
+        if not wds_path.is_dir():
+            print(f"no webdataset at {wds_path}; building it from the raw dataset")
+            build_webdataset(parse_gazecapture(Path(dataset_root)), wds_path)
+
+        shards = [str(shard) for shard in sorted(wds_path.glob("*.tar"))]
+        self.samples: list[Sample] = []
+        self.shard_by_key: dict[str, str] = {}
+        for s in wds.WebDataset(shards, shardshuffle=False):
+            meta = json.loads(s["json"])
+            self.samples.append(Sample.from_manifest_entry(meta))
+            self.shard_by_key[meta["sample_id"]] = s["__url__"]
 
         wanted = set(self.splits)
         self.samples = [
@@ -305,20 +307,11 @@ class GazeCapture(Dataset):
             if sample.sample_id.split("/")[2] in wanted
         ]
 
-        self.landmarker: Any = None  # created lazily, per worker process
-
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.samples[idx]
-
-        if self.landmarker is None:
-            self.landmarker = get_landmarker()
-        result = check_sample(self.landmarker, sample)
-        # Should never happen: every sample passed filter_dataset
-        if isinstance(result, str):
-            raise RuntimeError(  # noqa: TRY004 invariant violation, not a type error
-                f"preprocessing failed for {sample.sample_id}: {result}"
-            )
-        return result
+        return read_webdataset_sample(
+            self.shard_by_key[sample.sample_id], sample.sample_id
+        )

@@ -6,11 +6,15 @@ Primary preprocessing tools:
 3. normalize_face warps the image into a canonical face/eye frame
 """
 
+import io
+import json
 import math
 import os
+import tarfile
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.request import urlretrieve
@@ -18,6 +22,7 @@ from urllib.request import urlretrieve
 import cv2
 import mediapipe as mp
 import numpy as np
+import webdataset as wds
 from mediapipe.tasks.python.core.base_options import BaseOptions
 from mediapipe.tasks.python.vision import (
     FaceLandmarker,
@@ -408,16 +413,24 @@ def check_sample(
     }
 
 
-def filter_dataset(
-    samples: list[Sample], num_threads: int | None = None
-) -> list[Sample]:
-    """Drop samples that fail quality checks; return the survivors.
+def build_webdataset(
+    samples: list[Sample], path: str | os.PathLike[str], num_threads: int | None = None
+) -> None:
+    """Preprocess samples with `check_sample` and cache them as a webdataset.
 
-    Runs `check_sample` on every sample; a string result is the drop
-    reason. Runs on a thread pool. Each worker thread owns its own
-    FaceLandmarker instance. num_threads defaults to the number of CPU
-    cores; drops are printed (in input order) with a summary at the end.
+    Drops invalid samples. Kept samples are written to shard files under
+    `path` (a directory), keyed by their sample_id:
+
+    - `{key}.json`      manifest metadata, plus `label` and `R_norm`
+    - `{key}.png`       normalized face crop (224x224x3 RGB)
+    - `{key}.eyes.npy`  uint8 (2, 36, 60, 3); [0] left, [1] right eye
+
+    Args:
+        samples: parsed samples (e.g. from `parse_mpii`).
+        path: directory for the shard files; created if missing.
+        num_threads: pool size; defaults to the number of CPU cores.
     """
+    path = Path(path)
     workers = num_threads or os.cpu_count() or 1
     workers = max(1, min(workers, len(samples)))
 
@@ -431,23 +444,99 @@ def filter_dataset(
                 thread_local.landmarker = get_landmarker()
         return thread_local.landmarker
 
-    kept: list[Sample] = []
     drop_counts: Counter[tuple[str, str]] = Counter()
+    written = 0
+
+    path.mkdir(parents=True, exist_ok=True)
+    for stale in path.glob("*.tar"):
+        stale.unlink()  # a rebuild must not mix in shards of a previous run
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = pool.map(
             lambda s: check_sample(thread_landmarker(), s),
             samples,
         )
-        for sample, result in tqdm(zip(samples, results), total=len(samples)):
-            if isinstance(result, str):
-                drop_counts[(sample.source_dataset.value, result)] += 1
-            else:
-                kept.append(sample)
+        with wds.ShardWriter(
+            str(path / f"{path.name}-%06d.tar"), maxcount=1000  # ~150 MB per shard
+        ) as sink:
+            for sample, result in tqdm(zip(samples, results), total=len(samples)):
+                if isinstance(result, str):
+                    drop_counts[(sample.source_dataset.value, result)] += 1
+                    continue
+                sink.write({
+                    "__key__": result["sample_id"],
+                    "json": {
+                        **sample.to_manifest_entry(),
+                        "label": result["label"].tolist(),
+                        "R_norm": result["R_norm"].tolist(),
+                    },
+                    "png": result["face"],
+                    "eyes.npy": np.stack(
+                        [result["left_eye"], result["right_eye"]]
+                    ),
+                })
+                written += 1
 
     print(
-        f"filtered {len(kept)}/{len(samples)} samples ({len(samples) - len(kept)} dropped)"
+        f"wrote {written}/{len(samples)} samples to {path}"
+        f" ({len(samples) - written} dropped)"
     )
     for (dataset, reason), count in sorted(drop_counts.items()):
         print(f"  {dataset} / {reason}: {count}")
-    return kept
+
+
+@lru_cache(maxsize=8)
+def open_shard(shard: str) -> tarfile.TarFile:
+    """Open a shard and read its member index once. Handles are cached per
+    process (DataLoader workers each get their own copy)."""
+    tf = tarfile.open(shard, "r")  # noqa: SIM115 handle is cached, closed on eviction
+    # Loads the index. Later lookups don't rescan the file
+    tf.getmembers()  
+    return tf
+
+
+def read_shard_member(shard: str, name: str) -> bytes:
+    """Read one member's bytes from a shard."""
+    try:
+        f = open_shard(shard).extractfile(name)
+    except KeyError as exc:
+        raise FileNotFoundError(f"member {name} missing in {shard}") from exc
+    if f is None:
+        raise FileNotFoundError(f"member {name} is not a regular file in {shard}")
+    return f.read()
+
+
+def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
+    """Read one preprocessed sample from a shard written by `build_webdataset`.
+
+    Args:
+        shard: shard file the sample lives in.
+        key: the sample's sample_id.
+
+    Returns:
+        The per-item dict
+        ``{"sample_id", "face", "left_eye", "right_eye", "label", "R_norm"}``
+        - exactly what `check_sample` computed when the sample was cached.
+    """
+    meta = json.loads(read_shard_member(shard, f"{key}.json"))
+    if not isinstance(meta, dict):
+        raise TypeError(f"metadata for {key} in {shard} is not a JSON object")
+
+    bgr = cv2.imdecode(
+        np.frombuffer(read_shard_member(shard, f"{key}.png"), dtype=np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    if bgr is None:
+        raise ValueError(f"corrupt face crop for {key} in {shard}")
+    face = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), dtype=np.uint8)
+
+    eyes = np.load(io.BytesIO(read_shard_member(shard, f"{key}.eyes.npy")))
+
+    return {
+        "sample_id": str(meta["sample_id"]),
+        "face": face,
+        "left_eye": eyes[0],
+        "right_eye": eyes[1],
+        "label": np.array(meta["label"], dtype=np.float32),
+        "R_norm": np.array(meta["R_norm"], dtype=np.float64),
+    }
