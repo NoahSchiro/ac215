@@ -25,19 +25,19 @@ export default function Maze() {
 
               // Draw only the walls that still exist.
               borderTop: cell.walls.top
-                ? '2px solid black'
+                ? '2px solid var(--maze-wall)'
                 : 'none',
 
               borderRight: cell.walls.right
-                ? '2px solid black'
+                ? '2px solid var(--maze-wall)'
                 : 'none',
 
               borderBottom: cell.walls.bottom
-                ? '2px solid black'
+                ? '2px solid var(--maze-wall)'
                 : 'none',
 
               borderLeft: cell.walls.left
-                ? '2px solid black'
+                ? '2px solid var(--maze-wall)'
                 : 'none',
             }}
           />
