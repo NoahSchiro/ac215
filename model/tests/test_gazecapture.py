@@ -2,12 +2,18 @@
 
 import json
 import math
+import shutil
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
-from src.data.gazecapture import parse_gazecapture, parse_gazecapture_sample
+from src.data.gazecapture import (
+    GazeCapture,
+    parse_gazecapture,
+    parse_gazecapture_sample,
+)
 from src.data.schema import DeviceType, PointPx, SizePx, SourceDataset
 
 
@@ -17,6 +23,8 @@ def make_recording(
     *,
     frame_files: tuple[str, ...] = ("00000.jpg", "00001.jpg"),
     device: str = "iPhone 6",
+    split: str = "train",
+    real_image: Path | None = None,
     xp: tuple[float, ...] | None = None,
     yp: tuple[float, ...] | None = None,
     screen: tuple[tuple[int, int], ...] | None = None,
@@ -25,6 +33,8 @@ def make_recording(
     """Build a minimal recording directory with touch-only frame images.
 
     Per-frame columns default to portrait iPhone 6 values for every frame.
+    `real_image` (e.g. tests/data/face.jpg) replaces the touch-only files
+    with a real, detectable face image.
     """
     n = len(frame_files)
     xp = xp if xp is not None else tuple(160.0 for _ in range(n))
@@ -37,12 +47,15 @@ def make_recording(
     frames_dir = subject_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     for frame in frame_files:
-        (frames_dir / frame).touch()
+        if real_image is None:
+            (frames_dir / frame).touch()
+        else:
+            shutil.copy(real_image, frames_dir / frame)
     info: dict[str, Any] = {
         "TotalFrames": len(frame_files),
         "NumFaceDetections": len(frame_files),
         "NumEyeDetections": len(frame_files),
-        "Dataset": "train",
+        "Dataset": split,
         "DeviceName": device,
     }
     per_frame = {
@@ -70,7 +83,7 @@ def test_parse_sample_builds_sample(tmp_path: Path) -> None:
     sample = parse_gazecapture_sample(subject_dir, 0)
 
     assert sample is not None
-    assert sample.sample_id == "gazecapture/00002/frame-000000"
+    assert sample.sample_id == "gazecapture/00002/train/frame-000000"
     assert sample.subject_id == "00002"
     assert sample.source_dataset is SourceDataset.GazeCapture
     assert sample.device_type is DeviceType.Phone
@@ -126,6 +139,7 @@ def test_parse_sample_drops_invalid_frames(tmp_path: Path, capsys) -> None:
     missing_image = make_recording(tmp_path, name="00003")
     (missing_image / "frames" / "00001.jpg").unlink()
     make_recording(tmp_path, name="00005", device="Nokia 3310")
+    make_recording(tmp_path, name="00008", split="dev")  # unknown official split
     (tmp_path / "00006").mkdir()
     short_arrays = make_recording(tmp_path, name="00007")
     (short_arrays / "dotInfo.json").write_text(
@@ -136,6 +150,8 @@ def test_parse_sample_drops_invalid_frames(tmp_path: Path, capsys) -> None:
     assert "image not found" in capsys.readouterr().out
     assert parse_gazecapture_sample(tmp_path / "00005", 0) is None
     assert "unknown DeviceName" in capsys.readouterr().out
+    assert parse_gazecapture_sample(tmp_path / "00008", 0) is None
+    assert "Dataset must be one of" in capsys.readouterr().out
     assert parse_gazecapture_sample(tmp_path / "00006", 0) is None
     assert "annotation not found" in capsys.readouterr().out
     assert parse_gazecapture_sample(tmp_path / "00007", 0) is None
@@ -179,3 +195,80 @@ def test_parse_dataset_is_deterministic(tmp_path: Path) -> None:
     second = parse_gazecapture(tmp_path)
 
     assert first == second
+
+
+_FACE_IMAGE = Path(__file__).parent / "data" / "face.jpg"
+
+
+def make_mini_dataset(root: Path) -> Path:
+    """Two subjects (00002 train, 00003 val) with one detectable frame each."""
+    for name, split in (("00002", "train"), ("00003", "val")):
+        make_recording(
+            root,
+            name=name,
+            split=split,
+            frame_files=("00000.jpg",),
+            real_image=_FACE_IMAGE,
+        )
+    return root
+
+
+@pytest.fixture
+def mini_dataset(tmp_path: Path) -> Path:
+    """Synthetic two-subject dataset; the filtered manifest lands inside it."""
+    return make_mini_dataset(tmp_path / "GazeCapture")
+
+
+def test_builds_manifest_on_first_use(mini_dataset: Path) -> None:
+    manifest = mini_dataset / "gazecapture_filtered.json"
+    assert not manifest.is_file()
+
+    ds = GazeCapture(["train", "val"], dataset_root=mini_dataset)
+
+    assert manifest.is_file()  # built and cached for later runs
+    assert len(ds) == 2
+
+
+def test_loads_existing_manifest_without_raw_data(mini_dataset: Path) -> None:
+    GazeCapture("train", dataset_root=mini_dataset)  # first use builds the manifest
+    for child in mini_dataset.iterdir():  # raw data disappears, manifest stays
+        if child.name != "gazecapture_filtered.json":
+            shutil.rmtree(child)
+
+    ds = GazeCapture("train", dataset_root=mini_dataset)  # manifest only
+
+    assert len(ds) == 1
+
+
+def test_getitem_computes_crops_and_label(mini_dataset: Path) -> None:
+    ds = GazeCapture("train", dataset_root=mini_dataset)
+
+    item = ds[0]
+
+    assert item["sample_id"] == "gazecapture/00002/train/frame-000000"
+    assert item["face"].shape == (224, 224, 3)
+    assert item["left_eye"].shape == (36, 60, 3)
+    assert item["right_eye"].shape == (36, 60, 3)
+    # label = raw gaze target / screen size, from the annotation JSONs
+    assert item["label"].dtype == np.float32
+    assert item["label"] == pytest.approx(
+        np.array([160 / 320, 284 / 568], dtype=np.float32)
+    )
+    assert np.allclose(item["R_norm"] @ item["R_norm"].T, np.eye(3), atol=1e-9)
+
+
+def test_splits_select_subjects(mini_dataset: Path) -> None:
+    ds_train = GazeCapture("train", dataset_root=mini_dataset)
+    ds_val = GazeCapture(["val"], dataset_root=mini_dataset)
+
+    assert len(ds_train) == 1
+    assert len(ds_val) == 1
+    assert {s.subject_id for s in ds_train.samples} == {"00002"}
+    assert {s.subject_id for s in ds_val.samples} == {"00003"}
+
+
+def test_rejects_unknown_splits(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="train, val, test"):
+        GazeCapture("dev", dataset_root=tmp_path)
+    with pytest.raises(ValueError, match="train, val, test"):
+        GazeCapture(["train", "benchmark"], dataset_root=tmp_path)

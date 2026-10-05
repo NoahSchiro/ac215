@@ -1,4 +1,5 @@
-"""Parse raw GazeCapture files into Sample records.
+"""Parse raw GazeCapture files into Sample records. Contains
+the GazeCapture class as well
 
 GazeCapture provides no camera calibration and no physical screen sizes,
 so both are estimated:
@@ -16,11 +17,16 @@ following the per-frame screen orientation in screen.json
 
 import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+import cv2
+import numpy as np
+from torch.utils.data import Dataset
 
 from src.data.schema import (
     CameraIntrinsics,
@@ -31,7 +37,21 @@ from src.data.schema import (
     SizePx,
     SourceDataset,
     make_sample_id,
+    read_manifest,
+    write_manifest,
 )
+from src.data.utils import (
+    filter_dataset,
+    get_landmarker,
+    head_pose_est,
+    landmark_detection,
+    normalize_face,
+    transform_label,
+)
+
+_OFFICIAL_SPLITS = ("train", "val", "test")
+"""GazeCapture's subject-disjoint benchmark splits (look at
+info.json for more info)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +59,7 @@ class Recording:
     """One recording's annotations as index-aligned per-frame tuples."""
 
     device_name: str
+    split: str
     frame_files: tuple[str, ...]
     gaze_x_pts: tuple[float, ...]
     gaze_y_pts: tuple[float, ...]
@@ -75,15 +96,21 @@ def load_recording(subject_dir: Path) -> Recording:
     screen = read_json("screen.json")
     if not isinstance(info, dict) or not isinstance(info.get("DeviceName"), str):
         raise TypeError("info.json must hold a DeviceName string")
+    split = info.get("Dataset")
+    if not isinstance(split, str):
+        raise TypeError("info.json must hold a Dataset string")
+    if split not in _OFFICIAL_SPLITS:
+        raise ValueError(
+            f"info.json Dataset must be one of {', '.join(_OFFICIAL_SPLITS)}"
+        )
     if not isinstance(frame_files, list) or not frame_files:
         raise ValueError("frames.json must be a non-empty list")
     if not isinstance(dot_info, dict) or not isinstance(screen, dict):
-        raise TypeError(
-            "dotInfo.json and screen.json must be objects"
-        )
+        raise TypeError("dotInfo.json and screen.json must be objects")
     num_frames = len(frame_files)
     return Recording(
         device_name=info["DeviceName"],
+        split=split,
         frame_files=tuple(str(name) for name in frame_files),
         gaze_x_pts=_column(dot_info, "XPts", "dotInfo.json", num_frames),
         gaze_y_pts=_column(dot_info, "YPts", "dotInfo.json", num_frames),
@@ -138,21 +165,21 @@ def _screen_size_mm(device_name: str, orientation: int) -> SizeMm:
     # points at 326 ppi -> 58.4 x 103.9 mm). Keyed by the DeviceName
     # strings in info.json.
     screen_size = {
-        "iPhone 4S": SizeMm(width=49.9, height=74.8), # 640x960 @ 326 ppi
-        "iPhone 5": SizeMm(width=49.9, height=88.5), # 640x1136 @ 326 ppi
+        "iPhone 4S": SizeMm(width=49.9, height=74.8),  # 640x960 @ 326 ppi
+        "iPhone 5": SizeMm(width=49.9, height=88.5),  # 640x1136 @ 326 ppi
         "iPhone 5S": SizeMm(width=49.9, height=88.5),
         "iPhone 5C": SizeMm(width=49.9, height=88.5),
-        "iPhone 6": SizeMm(width=58.4, height=103.9), # 750x1334 @ 326 ppi
+        "iPhone 6": SizeMm(width=58.4, height=103.9),  # 750x1334 @ 326 ppi
         "iPhone 6s": SizeMm(width=58.4, height=103.9),
-        "iPhone 6 Plus": SizeMm(width=68.4, height=121.7), # 1080x1920 @ 401 ppi
+        "iPhone 6 Plus": SizeMm(width=68.4, height=121.7),  # 1080x1920 @ 401 ppi
         "iPhone 6s Plus": SizeMm(width=68.4, height=121.7),
-        "iPad 2": SizeMm(width=147.7, height=196.9), # 768x1024 @ 132 ppi
+        "iPad 2": SizeMm(width=147.7, height=196.9),  # 768x1024 @ 132 ppi
         "iPad 3": SizeMm(width=147.7, height=196.9),
         "iPad 4": SizeMm(width=147.7, height=196.9),
         "iPad Air": SizeMm(width=147.7, height=196.9),
         "iPad Air 2": SizeMm(width=147.7, height=196.9),
-        "iPad Mini": SizeMm(width=119.6, height=159.5), # 768x1024 @ 163 ppi
-        "iPad Pro": SizeMm(width=196.9, height=262.6), # 2048x2732 @ 264 ppi
+        "iPad Mini": SizeMm(width=119.6, height=159.5),  # 768x1024 @ 163 ppi
+        "iPad Pro": SizeMm(width=196.9, height=262.6),  # 2048x2732 @ 264 ppi
     }
     if device_name not in screen_size:
         raise ValueError(f"unknown DeviceName {device_name!r}")
@@ -191,7 +218,10 @@ def parse_gazecapture_sample(subject_dir: Path, frame_idx: int) -> Sample | None
         orientation = int(recording.screen_orientation[frame_idx])
         return Sample(
             sample_id=make_sample_id(
-                SourceDataset.GazeCapture, subject_dir.name, f"frame-{frame_idx:06d}"
+                SourceDataset.GazeCapture,
+                subject_dir.name,
+                recording.split,
+                f"frame-{frame_idx:06d}",
             ),
             source_dataset=SourceDataset.GazeCapture,
             subject_id=subject_dir.name,
@@ -235,3 +265,87 @@ def parse_gazecapture(root: Path) -> list[Sample]:
 
     print(f"parsed {len(samples)} datapoints, dropped {dropped} of {total}")
     return samples
+
+
+class GazeCapture(Dataset):
+    """Quality-filtered GazeCapture as a torch Dataset.
+
+    Args:
+        splits: split(s) to include ("train", "val", "test"). Accepts a
+            single string or a list of strings
+        dataset_root: raw GazeCapture root, only needed when the filtered
+            manifest does not exist yet (it is built and cached on first
+            use).
+    """
+
+    def __init__(
+        self,
+        splits: str | list[str],
+        dataset_root: os.PathLike[str],
+    ) -> None:
+
+        manifest_path = Path(dataset_root) / "gazecapture_filtered.json"
+
+        if isinstance(splits, str):
+            splits = [splits]
+        for split in splits:
+            if split not in _OFFICIAL_SPLITS:
+                raise ValueError(
+                    f"split {split!r} is unknown: GazeCapture has"
+                    f" {', '.join(_OFFICIAL_SPLITS)}"
+                )
+        self.splits = sorted(set(splits))
+
+        if manifest_path.is_file():
+            self.samples = read_manifest(manifest_path)
+        else:
+            print(f"no manifest at {manifest_path}; building it from the raw dataset")
+            self.samples = filter_dataset(parse_gazecapture(Path(dataset_root)))
+            write_manifest(self.samples, manifest_path)
+
+        wanted = set(self.splits)
+        self.samples = [
+            sample
+            for sample in self.samples
+            if sample.sample_id.split("/")[2] in wanted
+        ]
+
+        self.landmarker: Any = None  # created lazily, per worker process
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        sample = self.samples[idx]
+
+        bgr = cv2.imread(str(sample.image_path))
+        # Should never happen
+        if bgr is None:
+            raise FileNotFoundError(
+                f"image missing at training time: {sample.image_path}"
+            )
+        image = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
+
+        if self.landmarker is None:
+            self.landmarker = get_landmarker()
+        landmarks = landmark_detection(self.landmarker, image)
+        # Should never happen
+        if landmarks is None:
+            raise RuntimeError(f"face detection failed for {sample.sample_id}")
+
+        R, t = head_pose_est(landmarks, sample.camera_intrinsics)
+        face, left_eye, right_eye, R_virtual = normalize_face(
+            image, landmarks, R, t, sample.camera_intrinsics
+        )
+        fraction, _ = transform_label(
+            sample.gaze_target_px, sample.screen_size_px, R_virtual
+        )
+
+        return {
+            "sample_id": sample.sample_id,
+            "face": face,
+            "left_eye": left_eye,
+            "right_eye": right_eye,
+            "label": np.array(fraction, dtype=np.float32),
+            "R_norm": R_virtual,
+        }
