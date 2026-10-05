@@ -1,5 +1,6 @@
 # Note that the tar.gz is allowed
 data/MPIIFaceGaze/*
+data/GazeCapture*
 
 # Model weights
 model/models/

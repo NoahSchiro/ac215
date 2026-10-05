@@ -20,8 +20,12 @@ Training and backend deployment (API wrapper, containerization, `kube.yaml`)
 
 While I would include the data here through `git lfs`, 
 
-- The GazeCapture dataset comes with a license which does not allow for redistribution (though it can be used for research tasks / class projects). We may or may not use that, so instructions on use is pending
-- The MPIIFaceGaze dataset has no such restrictions, and as such, can be fetched by `git clone`-ing this repo (**if you have `git lfs` installed!!**). Once you have cloned, just run `tar -xzf data/MPIIFaceGaze.tar.gz -C data`
+- The GazeCapture dataset comes with a license which does not allow for redistribution. It comes as a `tar` full of `tar.gz` so to unpack:
+  - Move the `tar` to `./model/data/`
+  - `tar -xf GazeCapture.tar -C GazeCapture/`
+  - `cd GazeCapture/`
+  - `for file in *.tar.gz; do tar -xzf "$file" && rm "$file"; done`
+- The MPIIFaceGaze dataset has no license restrictions, and as such, can be fetched by `git clone`-ing this repo (**if you have `git lfs` installed!!**). Once you have cloned, just run `tar -xzf data/MPIIFaceGaze.tar.gz -C data`
 
 ## Web UI
 
