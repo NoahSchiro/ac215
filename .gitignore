@@ -1,6 +1,9 @@
 # Note that the tar.gz is allowed
 data/MPIIFaceGaze/*
 
+# Model weights
+model/models/
+
 __pycache__/
 *.pyc
 

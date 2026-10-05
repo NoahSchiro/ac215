@@ -7,7 +7,14 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "mediapipe>=1.0.1",
+    "numpy>=2.5.3",
+    "opencv-python-headless>=5.0.0.93",
+    "scipy>=1.18.1",
+    "torch>=2.14.1",
+    "tqdm>=4.70.1",
+]
 
 [dependency-groups]
 dev = [
@@ -15,7 +22,18 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.7",
+    "scipy-stubs>=1.18.1.1",
+    "types-tqdm>=4.70.0.20260906",
 ]
 
 [mypy]
 strict = true
+
+# This just ensures that we don't grab the GUI version of opencv (not needed)
+[tool.uv]
+override-dependencies = ["opencv-contrib-python; sys_platform == 'never'"]
+
+# Mediapipe package does some weird stuff that requires this
+[[tool.mypy.overrides]]
+module = "mediapipe.*"
+ignore_missing_imports = true

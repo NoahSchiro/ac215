@@ -14,6 +14,8 @@ jobs:
         working-directory: model
     steps:
       - uses: actions/checkout@v4
+      - name: Install system libraries required by mediapipe
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgles2 libgl1
       - uses: astral-sh/setup-uv@v5
         with:
           working-directory: model
