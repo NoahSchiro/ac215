@@ -14,6 +14,7 @@ dependencies = [
     "scipy>=1.18.1",
     "torch>=2.14.1",
     "tqdm>=4.70.1",
+    "webdataset>=1.0.2",
 ]
 
 [dependency-groups]
@@ -36,4 +37,9 @@ override-dependencies = ["opencv-contrib-python; sys_platform == 'never'"]
 # Mediapipe package does some weird stuff that requires this
 [[tool.mypy.overrides]]
 module = "mediapipe.*"
+ignore_missing_imports = true
+
+# webdataset ships .pyi stubs but no py.typed marker, so mypy skips them
+[[tool.mypy.overrides]]
+module = "webdataset.*"
 ignore_missing_imports = true

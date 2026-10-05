@@ -24,8 +24,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import cv2
-import numpy as np
 from torch.utils.data import Dataset
 
 from src.data.schema import (
@@ -41,12 +39,9 @@ from src.data.schema import (
     write_manifest,
 )
 from src.data.utils import (
+    check_sample,
     filter_dataset,
     get_landmarker,
-    head_pose_est,
-    landmark_detection,
-    normalize_face,
-    transform_label,
 )
 
 _OFFICIAL_SPLITS = ("train", "val", "test")
@@ -318,34 +313,12 @@ class GazeCapture(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.samples[idx]
 
-        bgr = cv2.imread(str(sample.image_path))
-        # Should never happen
-        if bgr is None:
-            raise FileNotFoundError(
-                f"image missing at training time: {sample.image_path}"
-            )
-        image = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
-
         if self.landmarker is None:
             self.landmarker = get_landmarker()
-        landmarks = landmark_detection(self.landmarker, image)
-        # Should never happen
-        if landmarks is None:
-            raise RuntimeError(f"face detection failed for {sample.sample_id}")
-
-        R, t = head_pose_est(landmarks, sample.camera_intrinsics)
-        face, left_eye, right_eye, R_virtual = normalize_face(
-            image, landmarks, R, t, sample.camera_intrinsics
-        )
-        fraction, _ = transform_label(
-            sample.gaze_target_px, sample.screen_size_px, R_virtual
-        )
-
-        return {
-            "sample_id": sample.sample_id,
-            "face": face,
-            "left_eye": left_eye,
-            "right_eye": right_eye,
-            "label": np.array(fraction, dtype=np.float32),
-            "R_norm": R_virtual,
-        }
+        result = check_sample(self.landmarker, sample)
+        # Should never happen: every sample passed filter_dataset
+        if isinstance(result, str):
+            raise RuntimeError(  # noqa: TRY004 invariant violation, not a type error
+                f"preprocessing failed for {sample.sample_id}: {result}"
+            )
+        return result
