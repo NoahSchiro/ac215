@@ -48,14 +48,17 @@ function App() {
 
   return (
     <>
-      <button
-        className="theme-toggle"
-        onClick={() =>
-          setTheme((current) => (current === 'light' ? 'dark' : 'light'))
-        }
-      >
-        Switch to {theme === 'light' ? 'dark' : 'light'} mode
-      </button>
+
+      {view === 'home' && (
+        <button
+          className="theme-toggle"
+          onClick={() =>
+            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+          }
+        >
+          Switch to {theme === 'light' ? 'dark' : 'light'} mode
+        </button>
+      )}
 
       {view === 'maze' ? (
         <MazeScreen onBack={goHome} />
