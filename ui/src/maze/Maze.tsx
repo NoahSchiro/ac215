@@ -90,17 +90,6 @@ export default function Maze() {
       const direction = KEY_DIRECTIONS[event.key]
       if (!direction) return
 
-      const target = event.target
-
-      // Allow normal typing in input fields.
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-      ) {
-        return
-      }
-
       event.preventDefault()
 
       // Our timer handles repeated movement.
