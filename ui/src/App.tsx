@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Calibration } from './calibration/Calibration'
 import type { CalibrationResult } from './calibration/points'
 import { HomeScreen } from './home/HomeScreen'
@@ -7,15 +7,25 @@ import { MazeScreen } from './maze/MazeScreen'
 type View = 'home' | 'maze' | 'calibration'
 
 function App() {
+  // Theme controls the appearance.
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+
+  // View controls which screen is displayed.
   const [view, setView] = useState<View>('home')
-  const [calibration, setCalibration] = useState<CalibrationResult | null>(null)
+  const [calibration, setCalibration] =
+    useState<CalibrationResult | null>(null)
 
   const goHome = useCallback(() => setView('home'), [])
 
-  // Full screen is entered by the calibration screen itself, after the
-  // camera permission prompt has been answered. Safari hides the prompt
-  // behind a full-screen page.
-  const startCalibration = useCallback(() => setView('calibration'), [])
+  // Calibration handles full screen after camera permission.
+  const startCalibration = useCallback(
+    () => setView('calibration'),
+    [],
+  )
 
   const finishCalibration = useCallback((result: CalibrationResult) => {
     setCalibration(result)
@@ -26,20 +36,41 @@ function App() {
     setView('home')
   }, [])
 
-  switch (view) {
-    case 'maze':
-      return <MazeScreen onBack={goHome} />
-    case 'calibration':
-      return <Calibration onComplete={finishCalibration} onCancel={cancelCalibration} />
-    default:
-      return (
+  // Keep calibration's screen layout unchanged.
+  if (view === 'calibration') {
+    return (
+      <Calibration
+        onComplete={finishCalibration}
+        onCancel={cancelCalibration}
+      />
+    )
+  }
+
+  return (
+    <>
+
+      {view === 'home' && (
+        <button
+          className="theme-toggle"
+          onClick={() =>
+            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+          }
+        >
+          Switch to {theme === 'light' ? 'dark' : 'light'} mode
+        </button>
+      )}
+
+      {view === 'maze' ? (
+        <MazeScreen onBack={goHome} />
+      ) : (
         <HomeScreen
           calibration={calibration}
           onStartMaze={() => setView('maze')}
           onStartCalibration={startCalibration}
         />
-      )
-  }
+      )}
+    </>
+  )
 }
 
 export default App

@@ -49,7 +49,7 @@ describe('App', () => {
   it('opens the maze and returns home', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /^Maze/ }))
-    expect(screen.getByText(/coming soon/)).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Maze' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Back to home/ }))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Gaze Maze')

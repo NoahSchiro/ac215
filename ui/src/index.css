@@ -1,8 +1,9 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
+  --text: #4b5563;
+  --text-h: #111827;
+  --bg: #ffffff;
+  --border: #e5e7eb;
+  --maze-wall: #111827;
   --accent: #aa3bff;
   --accent-bg: rgba(170, 59, 255, 0.1);
   --accent-border: rgba(170, 59, 255, 0.5);
@@ -13,29 +14,37 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --text: #4b5563;
+  --text-h: #111827;
+  --border: #e5e7eb;
+  --maze-wall: #111827;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16171d;
+  --text: #d1d5db;
+  --text-h: #f9fafb;
+  --border: #374151;
+  --maze-wall: #f9fafb;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
 }
 
 body {
@@ -57,15 +66,22 @@ h1 {
   font-size: 48px;
   letter-spacing: -1.4px;
   margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-  }
 }
 
 h2 {
   font-size: 24px;
   line-height: 118%;
   margin: 0 0 8px;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    font-size: 16px;
+  }
+
+  h1 {
+    font-size: 36px;
+  }
 }
 
 p {
@@ -75,4 +91,17 @@ p {
 button {
   font: inherit;
   cursor: pointer;
+}
+
+.theme-toggle {
+  padding: 10px 16px;
+  border: 1px solid var(--text);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--text-h);
+  outline-offset: 3px;
 }
