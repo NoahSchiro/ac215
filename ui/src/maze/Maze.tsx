@@ -15,6 +15,8 @@ export default function Maze() {
   return (
     <div 
     className="maze" 
+    role="group"
+    aria-label="Maze"
     style={{gridTemplateColumns: `repeat(${COLS}, 1fr)`,
     gridTemplateRows: `repeat(${ROWS}, 1fr)`,
     }}>
