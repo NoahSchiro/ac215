@@ -1,18 +1,53 @@
-import { useEffect, useState } from 'react'
-import './App.css'
-import Maze from './maze/Maze'
+import { useCallback, useEffect, useState } from 'react'
+import { Calibration } from './calibration/Calibration'
+import type { CalibrationResult } from './calibration/points'
+import { HomeScreen } from './home/HomeScreen'
+import { MazeScreen } from './maze/MazeScreen'
+
+type View = 'home' | 'maze' | 'calibration'
 
 function App() {
+  // Theme controls the appearance.
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
-  return (
-    <main>
-      <h1>Gaze Tracking Maze</h1>
+  // View controls which screen is displayed.
+  const [view, setView] = useState<View>('home')
+  const [calibration, setCalibration] =
+    useState<CalibrationResult | null>(null)
 
+  const goHome = useCallback(() => setView('home'), [])
+
+  // Calibration handles full screen after camera permission.
+  const startCalibration = useCallback(
+    () => setView('calibration'),
+    [],
+  )
+
+  const finishCalibration = useCallback((result: CalibrationResult) => {
+    setCalibration(result)
+    setView('home')
+  }, [])
+
+  const cancelCalibration = useCallback(() => {
+    setView('home')
+  }, [])
+
+  // Keep calibration's screen layout unchanged.
+  if (view === 'calibration') {
+    return (
+      <Calibration
+        onComplete={finishCalibration}
+        onCancel={cancelCalibration}
+      />
+    )
+  }
+
+  return (
+    <>
       <button
         className="theme-toggle"
         onClick={() =>
@@ -22,8 +57,16 @@ function App() {
         Switch to {theme === 'light' ? 'dark' : 'light'} mode
       </button>
 
-      <Maze />
-    </main>
+      {view === 'maze' ? (
+        <MazeScreen onBack={goHome} />
+      ) : (
+        <HomeScreen
+          calibration={calibration}
+          onStartMaze={() => setView('maze')}
+          onStartCalibration={startCalibration}
+        />
+      )}
+    </>
   )
 }
 
