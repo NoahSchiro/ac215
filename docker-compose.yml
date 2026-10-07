@@ -1,0 +1,40 @@
+# Model pipeline, runnable with a single command:
+#
+#     docker compose run --rm train
+#
+# Everything the run needs -- image build, shared-memory size, volume mounts --
+# is declared here rather than being retyped as `docker run` flags, so the
+# configuration is version-controlled alongside the code.
+
+services:
+  train:
+    build:
+      context: ./model
+    image: gaze-model:dev
+
+    # PyTorch's DataLoader passes tensors between worker processes through
+    # /dev/shm. Docker defaults that to 64MB, which a batch of 224x224 images
+    # overruns instantly -- and the resulting error reads "No space left on
+    # device", which looks like a full disk but is not. This is a property of
+    # the sandbox, not the image, so it cannot live in the Dockerfile.
+    shm_size: 2gb
+
+    volumes:
+      # Datasets stay out of the image: they have a different lifecycle from
+      # code, and GazeCapture at 136GB could never be baked in. Writable
+      # because the filtered manifest is cached back into the dataset root.
+      - ./data:/data
+      # Checkpoints must outlive the container, which --rm deletes on exit.
+      - ./model/checkpoints:/app/checkpoints
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # Overridable: `docker compose run --rm train --epochs 1 --val 5`
+    command:
+      - --data-root=/data/MPIIFaceGaze
+      - --val=13
+      - --test=14
+      - --epochs=30
+      - --workers=8
+      - --device=cpu

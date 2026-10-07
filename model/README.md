@@ -78,3 +78,60 @@ uv run python main.py
 - Nothing but the manifest is written to disk; crops and labels are recomputed per `__getitem__`. At our current scale, this is okay, but if we start getting up to millions of samples, a significant fraction of our compute time will be re-running preprocessing steps for each epoch. So might be worth it to cache.
 - Filtering thresholds live as constants in `filter_dataset`; the virtual-camera parameters are constants in `normalize_face`. Both must stay identical across datasets and match the TypeScript port of steps 2 and 4 planned for browser inference.
 - Adding a second dataset should be simple write a new parser to `Sample`, pass those samples through `filter_dataset()` and wrap it up in a torch Dataset.
+
+## Training
+
+### Why this runs in a container
+
+MediaPipe's FaceLandmarker aborts on macOS, inside Metal, with both the CPU and
+GPU delegate. The pipeline needs it for manifest building and for every
+`__getitem__`, so the model cannot run natively on a Mac at all. A Linux
+container has no Metal, so MediaPipe falls back to XNNPACK — the same path CI
+uses on Ubuntu. Linux users can skip the container and run `train.py` directly.
+
+The tradeoff: Docker Desktop on macOS does not pass through Apple's GPU, so
+training in the container is CPU-only. Once preprocessed crops are cached to
+disk (PR #32), training will no longer need MediaPipe and can run natively on
+MPS instead.
+
+### Running it
+
+```bash
+docker compose run --rm train                      # defaults in docker-compose.yml
+docker compose run --rm train --epochs 1 --val 5   # arguments override
+```
+
+Or directly, without compose:
+
+```bash
+docker build -t gaze-model:dev ./model
+docker run --rm --shm-size=2g \
+  -v "$PWD/data:/data" -v "$PWD/model/checkpoints:/app/checkpoints" \
+  gaze-model:dev --data-root /data/MPIIFaceGaze --val 13 --test 14 --epochs 1
+```
+
+`--shm-size=2g` is required. PyTorch's DataLoader passes tensors between worker
+processes through `/dev/shm`, which Docker defaults to 64MB; a batch of 224x224
+images overruns it and fails with `No space left on device`, which looks like a
+full disk but is not. Compose sets this via `shm_size`.
+
+### What the training code does
+
+| Module | Role |
+|---|---|
+| `src/training/splits.py` | Participant-disjoint splits. `Split` validates pairwise disjointness at construction, so an overlapping split fails loudly rather than reporting an inflated number. |
+| `src/training/model.py` | `GazeNet`: an ImageNet-pretrained ResNet-18 over the face crop, plus one eye tower shared across both eyes (the left is flipped into the right's orientation). 11.48M parameters, 11.31M of which is the backbone. |
+| `src/training/metrics.py` | Mean/median/p95 plus a per-participant breakdown, with converters to cm and degrees so results compare against published MPIIFaceGaze figures. |
+| `src/training/loop.py` | Train/eval loops, per-epoch and best checkpointing, resume. Experiment tracking goes through a `RunLogger` protocol, so wandb stays an optional import. |
+
+The output head is a constructor argument (`screen_fraction` or
+`gaze_direction`) because the label frame is still open: `normalize_face` warps
+the crop into a head-centered frame, but the emitted label is a raw screen
+fraction, which depends on head position relative to the screen. Swapping the
+head is a CLI flag, not a rewrite.
+
+### Data versioning
+
+`write_manifest` emits byte-identical JSON for identical input, so
+`sha256 data/MPIIFaceGaze/mpii_filtered.json` is a dataset snapshot ID. Record
+it alongside any reported result.
