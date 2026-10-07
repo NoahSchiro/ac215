@@ -1,5 +1,7 @@
-# Note that the tar.gz is allowed
 data/MPIIFaceGaze/*
+data/GazeCapture/*
+data/GazeCapture.tar
+!data/GazeCapture/gazecapture_filtered.json
 
 # Model weights
 model/models/
