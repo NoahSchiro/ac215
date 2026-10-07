@@ -130,6 +130,7 @@ class MPII(Dataset):
         dataset_root: os.PathLike[str],
     ) -> None:
 
+        wds_temp_path = Path(dataset_root) / "MPIIFaceGaze_wd_temp"
         wds_path = Path(dataset_root) / "MPIIFaceGaze_wd"
 
         # MPIIFaceGaze has 15 participants: p00..p14
@@ -147,7 +148,8 @@ class MPII(Dataset):
 
         if not wds_path.is_dir():
             print(f"no webdataset at {wds_path}; building it from the raw dataset")
-            build_webdataset(parse_mpii(Path(dataset_root)), wds_path)
+            build_webdataset(parse_mpii(Path(dataset_root)), wds_temp_path)
+            wds_temp_path.rename(wds_path)
 
         shards = [str(shard) for shard in sorted(wds_path.glob("*.tar"))]
         self.samples: list[Sample] = []
