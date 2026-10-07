@@ -2,6 +2,7 @@
 the MPIIDataset class as well
 """
 
+import json
 import math
 import os
 import re
@@ -9,8 +10,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
+import webdataset as wds
 from scipy.io import loadmat
 from torch.utils.data import Dataset
 
@@ -23,16 +24,10 @@ from src.data.schema import (
     SizePx,
     SourceDataset,
     make_sample_id,
-    read_manifest,
-    write_manifest,
 )
 from src.data.utils import (
-    filter_dataset,
-    get_landmarker,
-    head_pose_est,
-    landmark_detection,
-    normalize_face,
-    transform_label,
+    build_webdataset,
+    read_webdataset_sample,
 )
 
 
@@ -125,7 +120,7 @@ class MPII(Dataset):
     Args:
         participants: participant number(s) to include (0..14 -> p00..p14).
             Accepts a single int or a list of ints
-        root: raw MPIIFaceGaze root, only needed when the filtered manifest
+        root: raw MPIIFaceGaze root, only needed when the webdataset cache
             does not exist yet (it is built and cached on first use).
     """
 
@@ -135,7 +130,8 @@ class MPII(Dataset):
         dataset_root: os.PathLike[str],
     ) -> None:
 
-        manifest_path = Path(dataset_root) / "mpii_filtered.json"
+        wds_temp_path = Path(dataset_root) / "MPIIFaceGaze_wd_temp"
+        wds_path = Path(dataset_root) / "MPIIFaceGaze_wd"
 
         # MPIIFaceGaze has 15 participants: p00..p14
         num_participants = 15
@@ -150,52 +146,27 @@ class MPII(Dataset):
                 )
         self.participants = sorted({f"p{p:02d}" for p in participants})
 
-        if manifest_path.is_file():
-            self.samples = read_manifest(manifest_path)
-        else:
-            print(f"no manifest at {manifest_path}; building it from the raw dataset")
-            self.samples = filter_dataset(parse_mpii(Path(dataset_root)))
-            write_manifest(self.samples, manifest_path)
+        if not wds_path.is_dir():
+            print(f"no webdataset at {wds_path}; building it from the raw dataset")
+            build_webdataset(parse_mpii(Path(dataset_root)), wds_temp_path)
+            wds_temp_path.rename(wds_path)
+
+        shards = [str(shard) for shard in sorted(wds_path.glob("*.tar"))]
+        self.samples: list[Sample] = []
+        self.shard_by_key: dict[str, str] = {}
+        for s in wds.WebDataset(shards, shardshuffle=False):
+            meta = json.loads(s["json"])
+            self.samples.append(Sample.from_manifest_entry(meta))
+            self.shard_by_key[meta["sample_id"]] = s["__url__"]
 
         wanted = set(self.participants)
         self.samples = [s for s in self.samples if s.subject_id in wanted]
-
-        self.landmarker: Any = None  # created lazily, per worker process
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.samples[idx]
-
-        bgr = cv2.imread(str(sample.image_path))
-        # Should never happen
-        if bgr is None:
-            raise FileNotFoundError(
-                f"image missing at training time: {sample.image_path}"
-            )
-        image = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)).astype(np.uint8)
-
-        if self.landmarker is None:
-            self.landmarker = get_landmarker()
-        landmarks = landmark_detection(self.landmarker, image)
-        # Should never happen
-        if landmarks is None:
-            raise RuntimeError(f"face detection failed for {sample.sample_id}")
-
-        R, t = head_pose_est(landmarks, sample.camera_intrinsics)
-        face, left_eye, right_eye, R_virtual = normalize_face(
-            image, landmarks, R, t, sample.camera_intrinsics
+        return read_webdataset_sample(
+            self.shard_by_key[sample.sample_id], sample.sample_id
         )
-        fraction, _ = transform_label(
-            sample.gaze_target_px, sample.screen_size_px, R_virtual
-        )
-
-        return {
-            "sample_id": sample.sample_id,
-            "face": face,
-            "left_eye": left_eye,
-            "right_eye": right_eye,
-            "label": np.array(fraction, dtype=np.float32),
-            "R_norm": R_virtual,
-        }

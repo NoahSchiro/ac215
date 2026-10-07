@@ -215,27 +215,27 @@ def make_mini_dataset(root: Path) -> Path:
 
 @pytest.fixture
 def mini_dataset(tmp_path: Path) -> Path:
-    """Synthetic two-subject dataset; the filtered manifest lands inside it."""
+    """Synthetic two-subject dataset; the webdataset cache lands inside it."""
     return make_mini_dataset(tmp_path / "GazeCapture")
 
 
-def test_builds_manifest_on_first_use(mini_dataset: Path) -> None:
-    manifest = mini_dataset / "gazecapture_filtered.json"
-    assert not manifest.is_file()
+def test_builds_webdataset_on_first_use(mini_dataset: Path) -> None:
+    cache = mini_dataset / "GazeCapture_wd"
+    assert not cache.is_dir()
 
     ds = GazeCapture(["train", "val"], dataset_root=mini_dataset)
 
-    assert manifest.is_file()  # built and cached for later runs
+    assert cache.is_dir()  # built and cached for later runs
     assert len(ds) == 2
 
 
-def test_loads_existing_manifest_without_raw_data(mini_dataset: Path) -> None:
-    GazeCapture("train", dataset_root=mini_dataset)  # first use builds the manifest
-    for child in mini_dataset.iterdir():  # raw data disappears, manifest stays
-        if child.name != "gazecapture_filtered.json":
+def test_loads_existing_webdataset_without_raw_data(mini_dataset: Path) -> None:
+    GazeCapture("train", dataset_root=mini_dataset)  # first use builds the cache
+    for child in mini_dataset.iterdir():  # raw data disappears, cache stays
+        if child.name != "GazeCapture_wd":
             shutil.rmtree(child)
 
-    ds = GazeCapture("train", dataset_root=mini_dataset)  # manifest only
+    ds = GazeCapture("train", dataset_root=mini_dataset)  # cache only
 
     assert len(ds) == 1
 
