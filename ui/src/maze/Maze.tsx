@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+// useMemo was taken out
 import { generateMaze } from './mazeGenerator'
 import './Maze.css'
 
@@ -16,7 +17,7 @@ const KEY_DIRECTIONS: Record<string, Direction> = {
 }
 
 export default function Maze() {
-  const maze = useMemo(() => generateMaze(ROWS, COLS), [])
+  const [maze, setMaze] = useState(() => generateMaze(ROWS, COLS))
 
   const [player, setPlayer] = useState({
     row: 0,
@@ -124,78 +125,103 @@ export default function Maze() {
     }
   }, [movePlayer])
   const hasWon = player.row === ROWS - 1 && player.col === COLS - 1
+  function restartMaze() {
+    setMaze(generateMaze(ROWS, COLS))
 
+    setPlayer({
+      row: 0,
+      col: 0,
+      rotation: 0,
+      hasMoved: false,
+    })
+  }
   return (
-    <div
-      className="maze"
-      role="group"
-      aria-label="Maze"
-      style={{
-        gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${ROWS}, minmax(0, 1fr))`,
-      }}
-    >
-      {maze.map((row) =>
-        row.map((cell) => (
-          <div
-            key={`${cell.row}-${cell.col}`}
-            className="maze-cell"
-            style={{
-              gridRow: cell.row + 1,
-              gridColumn: cell.col + 1,
-              borderTop: cell.walls.top
-                ? '2px solid var(--maze-wall)'
-                : 'none',
-              borderRight: cell.walls.right
-                ? '2px solid var(--maze-wall)'
-                : 'none',
-              borderBottom: cell.walls.bottom
-                ? '2px solid var(--maze-wall)'
-                : 'none',
-              borderLeft: cell.walls.left
-                ? '2px solid var(--maze-wall)'
-                : 'none',
-            }}
-          />
-        )),
-      )}
-
-      {!hasWon && (
-        <div
-          className="maze-cheese"
-          role="img"
-          aria-label="Cheese goal"
-          style={{
-            gridRow: ROWS,
-            gridColumn: COLS,
-          }}
-        >
-          🧀
-        </div>
-      )}
-
+    <>
+      {/* Display the generated maze */}
       <div
-        className="maze-player"
+        className="maze"
+        role="group"
+        aria-label="Maze"
         style={{
-          left: `${((player.col + 0.5) / COLS) * 100}%`,
-          top: `${((player.row + 0.5) / ROWS) * 100}%`,
-          width: `${75 / COLS}%`,
-          height: `${75 / ROWS}%`,
+          gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${ROWS}, minmax(0, 1fr))`,
         }}
       >
-        <img
-          src={
-            !player.hasMoved || hasWon
-              ? '/pavlos_smile.png'
-              : '/pavlos_frown.png'
-          }
-          alt="Pavlos player"
-          draggable={false}
+        {/* Render each cell and its walls */}
+        {maze.map((row) =>
+          row.map((cell) => (
+            <div
+              key={`${cell.row}-${cell.col}`}
+              className="maze-cell"
+              style={{
+                gridRow: cell.row + 1,
+                gridColumn: cell.col + 1,
+                borderTop: cell.walls.top
+                  ? '2px solid var(--maze-wall)'
+                  : 'none',
+                borderRight: cell.walls.right
+                  ? '2px solid var(--maze-wall)'
+                  : 'none',
+                borderBottom: cell.walls.bottom
+                  ? '2px solid var(--maze-wall)'
+                  : 'none',
+                borderLeft: cell.walls.left
+                  ? '2px solid var(--maze-wall)'
+                  : 'none',
+              }}
+            />
+          )),
+        )}
+
+        {/* Display the cheese until Pavlos reaches it */}
+        {!hasWon && (
+          <div
+            className="maze-cheese"
+            role="img"
+            aria-label="Cheese goal"
+            style={{
+              gridRow: ROWS,
+              gridColumn: COLS,
+            }}
+          >
+            🧀
+          </div>
+        )}
+
+        {/* Display Pavlos at his current position */}
+        <div
+          className="maze-player"
           style={{
-            transform: `rotate(${hasWon ? 0 : player.rotation}deg)`,
+            left: `${((player.col + 0.5) / COLS) * 100}%`,
+            top: `${((player.row + 0.5) / ROWS) * 100}%`,
+            width: `${75 / COLS}%`,
+            height: `${75 / ROWS}%`,
           }}
-        />
+        >
+          <img
+            src={
+              !player.hasMoved || hasWon
+                ? '/pavlos_smile.png'
+                : '/pavlos_frown.png'
+            }
+            alt="Pavlos player"
+            draggable={false}
+            style={{
+              transform: `rotate(${hasWon ? 0 : player.rotation}deg)`,
+            }}
+          />
+        </div>
       </div>
-    </div>
+
+      {/* Show the victory message and restart button after winning */}
+      {hasWon && (
+        <div className="maze-win">
+          <h2>🎉 You found the cheese!</h2>
+          <button type="button" onClick={restartMaze}>
+            Try Another Maze
+          </button>
+        </div>
+      )}
+    </>
   )
 }
