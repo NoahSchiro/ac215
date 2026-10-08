@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-// useMemo was taken out
 import { generateMaze } from './mazeGenerator'
 import './Maze.css'
 
@@ -29,6 +28,9 @@ export default function Maze() {
   const movePlayer = useCallback(
     (direction: Direction) => {
       setPlayer((current) => {
+        if (current.row === ROWS - 1 && current.col === COLS - 1) {
+          return current
+        }
         const cell = maze[current.row][current.col]
         let nextRow = current.row
         let nextCol = current.col
