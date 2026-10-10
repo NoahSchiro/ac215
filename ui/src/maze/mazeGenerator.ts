@@ -1,3 +1,4 @@
+
 // Defines the structure of one cell in the maze.
 export interface Cell {
   // Position of the cell within the maze grid.
@@ -20,6 +21,11 @@ export interface Cell {
 // A Maze is represented as a 2D array of Cell objects.
 export type Maze = Cell[][]
 
+// Represents the position of Pavlos or the cheese.
+export type MazePosition = {
+  row: number
+  col: number
+}
 
 // Creates the initial maze grid before any paths have been carved.
 export function createGrid(rows: number, cols: number): Maze {
@@ -44,7 +50,6 @@ export function createGrid(rows: number, cols: number): Maze {
     })),
   )
 }
-
 
 // Finds all neighboring cells that have not yet been visited.
 // These are the possible cells the DFS algorithm can move to next.
@@ -90,7 +95,6 @@ function getUnvisitedNeighbors(
   return neighbors
 }
 
-
 // Removes the wall between two adjacent cells.
 function removeWall(current: Cell, next: Cell): void {
   // Determine where the next cell is relative to the current cell.
@@ -126,14 +130,19 @@ function removeWall(current: Cell, next: Cell): void {
   }
 }
 
-
 // Generates the maze using randomized depth-first search (DFS)
 // with backtracking.
-export function generateMaze(rows: number, cols: number): Maze {
+export function generateMaze(
+  rows: number,
+  cols: number,
+  startPosition: MazePosition = { row: 0, col: 0 },
+  endPosition: MazePosition = { row: rows - 1, col: cols - 1 },
+): Maze {
   // Start with a grid where every cell has all four walls.
   const maze = createGrid(rows, cols)
 
   // Begin maze generation from the top-left cell.
+  // This is the DFS starting point, not necessarily Pavlos's position.
   const start = maze[0][0]
   start.visited = true
 
@@ -171,11 +180,19 @@ export function generateMaze(rows: number, cols: number): Maze {
     }
   }
 
-  // Create an entrance on the left side of the top-left cell.
-  maze[0][0].walls.left = false
+  // Create an entrance on the side where Pavlos starts.
+  if (startPosition.col === 0) {
+    maze[startPosition.row][startPosition.col].walls.left = false
+  } else {
+    maze[startPosition.row][startPosition.col].walls.right = false
+  }
 
-  // Create an exit on the right side of the bottom-right cell.
-  maze[rows - 1][cols - 1].walls.right = false
+  // Create an exit on the side where the cheese is located.
+  if (endPosition.col === 0) {
+    maze[endPosition.row][endPosition.col].walls.left = false
+  } else {
+    maze[endPosition.row][endPosition.col].walls.right = false
+  }
 
   return maze
 }
