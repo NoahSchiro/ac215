@@ -160,6 +160,9 @@ def save_checkpoint(
             "optimizer_state": optimizer.state_dict(),
             "output_mode": model.output_mode,
             "use_eyes": model.use_eyes,
+            # Recorded because it also selects the input normalization, so a
+            # mismatch at load time silently degrades predictions.
+            "pretrained": model.pretrained,
             "config": asdict(config),
         },
         path,
@@ -174,6 +177,20 @@ def load_checkpoint(
     if state["output_mode"] != model.output_mode:
         raise ValueError(
             f"checkpoint is {state['output_mode']}, model is {model.output_mode}"
+        )
+    # `pretrained` selects whether inputs get ImageNet normalization, so
+    # loading weights into a model configured the other way produces much
+    # worse predictions and no error. Fail loudly instead.
+    if "pretrained" in state and state["pretrained"] != model.pretrained:
+        raise ValueError(
+            f"checkpoint was trained with pretrained={state['pretrained']},"
+            f" model has pretrained={model.pretrained};"
+            " the input normalization would not match"
+        )
+    if state.get("use_eyes") is not None and state["use_eyes"] != model.use_eyes:
+        raise ValueError(
+            f"checkpoint has use_eyes={state['use_eyes']},"
+            f" model has use_eyes={model.use_eyes}"
         )
     model.load_state_dict(state["model_state"])
     if optimizer is not None:

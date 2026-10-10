@@ -358,3 +358,24 @@ def test_patience_none_runs_every_epoch(tmp_path: Path) -> None:
         Recorder(),
     )
     assert len(records) == 3
+
+
+def test_checkpoint_refuses_a_mismatched_normalization(tmp_path: Path) -> None:
+    """pretrained also selects input normalization, so a mismatch must fail loudly."""
+    path = tmp_path / "last.pt"
+    trained = GazeNet(pretrained=True)
+    save_checkpoint(
+        path, trained, torch.optim.AdamW(trained.parameters()), 0, 1.0, TrainConfig()
+    )
+    with pytest.raises(ValueError, match="input normalization"):
+        load_checkpoint(path, GazeNet(pretrained=False))
+
+
+def test_checkpoint_refuses_a_mismatched_eye_configuration(tmp_path: Path) -> None:
+    path = tmp_path / "last.pt"
+    trained = GazeNet(pretrained=False, use_eyes=True)
+    save_checkpoint(
+        path, trained, torch.optim.AdamW(trained.parameters()), 0, 1.0, TrainConfig()
+    )
+    with pytest.raises(ValueError, match="use_eyes"):
+        load_checkpoint(path, GazeNet(pretrained=False, use_eyes=False))
