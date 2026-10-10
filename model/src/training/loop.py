@@ -1,6 +1,7 @@
 """Train and evaluate loops, with checkpointing and resume."""
 
 import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -175,6 +176,7 @@ def fit(
     best_stats: ErrorStats | None = None
     last_stats: ErrorStats | None = None
     for epoch in range(start_epoch, config.epochs):
+        started = time.monotonic()
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip
         )
@@ -198,6 +200,7 @@ def fit(
                 "val_median": stats.median,
                 "val_p95": stats.p95,
                 "improved": improved,
+                "seconds": time.monotonic() - started,
                 **{
                     f"val_{subject}": s.mean
                     for subject, s in stats.per_participant.items()
