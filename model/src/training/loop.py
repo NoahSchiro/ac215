@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from src.data.utils import prepare_images
 from src.training.logging import RunLogger
@@ -52,6 +53,26 @@ def forward_batch(
     return prediction, batch["label"].to(device, non_blocking=True).float()
 
 
+def compute_loss(
+    model: GazeNet,
+    criterion: nn.Module,
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+) -> torch.Tensor:
+    """Apply the criterion, handling CosineEmbeddingLoss's extra target argument."""
+    if model.output_mode == "gaze_direction":
+        ones = torch.ones(prediction.shape[0], device=prediction.device)
+        return criterion(prediction, target, ones)
+    return criterion(prediction, target)
+
+
+def build_criterion(model: GazeNet) -> nn.Module:
+    """Cosine distance for directions, squared error for screen coordinates."""
+    if model.output_mode == "gaze_direction":
+        return nn.CosineEmbeddingLoss()
+    return nn.MSELoss()
+
+
 def train_one_epoch(
     model: GazeNet,
     loader: DataLoader[Any],
@@ -60,39 +81,42 @@ def train_one_epoch(
     device: torch.device,
     grad_clip: float | None = None,
 ) -> float:
-    """One pass over the training set. Returns mean loss."""
+    """One pass over the training set. Returns mean loss per batch."""
     model.train()
     total = 0.0
-    seen = 0
-    for batch in loader:
+    for batch in tqdm(loader, desc="train", leave=False):
         optimizer.zero_grad(set_to_none=True)
         prediction, target = forward_batch(model, batch, device)
-        if model.output_mode == "gaze_direction":
-            ones = torch.ones(prediction.shape[0], device=device)
-            loss = criterion(prediction, target, ones)
-        else:
-            loss = criterion(prediction, target)
+        loss = compute_loss(model, criterion, prediction, target)
         loss.backward()
         if grad_clip is not None:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
-
-        count = prediction.shape[0]
-        total += float(loss.item()) * count
-        seen += count
-    return total / max(seen, 1)
+        total += float(loss.item())
+    return total / max(len(loader), 1)
 
 
 @torch.no_grad()
 def evaluate(
-    model: GazeNet, loader: DataLoader[Any], device: torch.device
-) -> ErrorStats:
-    """Error over the whole loader, broken down per participant."""
+    model: GazeNet,
+    loader: DataLoader[Any],
+    device: torch.device,
+    criterion: nn.Module | None = None,
+) -> tuple[ErrorStats, float]:
+    """Error over the whole loader, broken down per participant.
+
+    Returns (stats, mean loss per batch). The loss is the same quantity
+    train_one_epoch reports, so the two are directly comparable: validation
+    loss rising while training loss falls is the overfitting signal.
+    """
     model.eval()
+    criterion = criterion if criterion is not None else build_criterion(model)
     errors: list[torch.Tensor] = []
     subjects: list[str] = []
-    for batch in loader:
+    total = 0.0
+    for batch in tqdm(loader, desc="eval", leave=False):
         prediction, target = forward_batch(model, batch, device)
+        total += float(compute_loss(model, criterion, prediction, target).item())
         if model.output_mode == "screen_fraction":
             errors.append(screen_fraction_error(prediction, target).cpu())
         else:
@@ -101,7 +125,7 @@ def evaluate(
         subjects.extend(sample_id.split("/")[1] for sample_id in batch["sample_id"])
     if not errors:
         raise ValueError("evaluation loader produced no batches")
-    return summarize(torch.cat(errors), subjects)
+    return summarize(torch.cat(errors), subjects), total / len(loader)
 
 
 def save_checkpoint(
@@ -160,11 +184,7 @@ def fit(
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
-    criterion: nn.Module = (
-        nn.CosineEmbeddingLoss()
-        if model.output_mode == "gaze_direction"
-        else nn.MSELoss()
-    )
+    criterion = build_criterion(model)
 
     start_epoch = 0
     best_error = float("inf")
@@ -180,7 +200,7 @@ def fit(
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip
         )
-        stats = evaluate(model, val_loader, device)
+        stats, val_loss = evaluate(model, val_loader, device, criterion)
         last_stats = stats
 
         improved = stats.mean < best_error
@@ -196,6 +216,7 @@ def fit(
             {
                 "epoch": epoch,
                 "train_loss": train_loss,
+                "val_loss": val_loss,
                 "val_mean": stats.mean,
                 "val_median": stats.median,
                 "val_p95": stats.p95,

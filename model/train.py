@@ -125,8 +125,10 @@ def main() -> None:
     if worst is not None:
         print(f"worst participant: {worst[0]} at {worst[1].mean:.5f}")
 
-    stats = evaluate(model, loader(args.test, shuffle=False), device)
-    print(f"test mean {stats.mean:.5f} over {stats.count} samples")
+    stats, test_loss = evaluate(model, loader(args.test, shuffle=False), device)
+    print(
+        f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
+    )
 
 
 if __name__ == "__main__":

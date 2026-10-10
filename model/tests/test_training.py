@@ -283,11 +283,35 @@ def test_fit_resumes_from_the_last_checkpoint(
     assert "resumed from" in capsys.readouterr().out
 
 
-def test_evaluate_reports_per_participant_error() -> None:
-    stats = evaluate(
+def test_evaluate_reports_per_participant_error_and_loss() -> None:
+    stats, loss = evaluate(
         GazeNet(pretrained=False),
         DataLoader(FakeGaze((3, 4)), batch_size=4),
         torch.device("cpu"),
     )
     assert stats.count == 8
     assert sorted(stats.per_participant) == ["p03", "p04"]
+    assert loss > 0.0
+
+
+def test_fit_logs_val_loss_alongside_train_loss() -> None:
+    """Both are mean-per-batch of the same criterion, so they are comparable."""
+    records: list[dict[str, Any]] = []
+
+    class Recorder:
+        def log(self, data: dict[str, Any]) -> None:
+            records.append(data)
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fit(
+            GazeNet(pretrained=False),
+            DataLoader(FakeGaze((0,)), batch_size=2),
+            DataLoader(FakeGaze((1,)), batch_size=2),
+            torch.device("cpu"),
+            TrainConfig(epochs=1, batch_size=2, num_workers=0),
+            Path(tmp),
+            Recorder(),
+        )
+    assert {"train_loss", "val_loss"} <= set(records[0])
