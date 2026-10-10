@@ -1,10 +1,6 @@
 # Model pipeline, runnable with a single command:
 #
 #     docker compose run --rm train
-#
-# Everything the run needs -- image build, shared-memory size, volume mounts --
-# is declared here rather than being retyped as `docker run` flags, so the
-# configuration is version-controlled alongside the code.
 
 services:
   train:
@@ -20,11 +16,7 @@ services:
     shm_size: 2gb
 
     volumes:
-      # Datasets stay out of the image: they have a different lifecycle from
-      # code, and GazeCapture at 136GB could never be baked in. Writable
-      # because the filtered manifest is cached back into the dataset root.
       - ./data:/data
-      # Checkpoints must outlive the container, which --rm deletes on exit.
       - ./model/checkpoints:/app/checkpoints
 
     environment:
