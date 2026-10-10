@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     optim.add_argument("--batch-size", type=int, default=256)
     optim.add_argument("--workers", type=int, default=8)
     optim.add_argument("--seed", type=int, default=0)
+    optim.add_argument(
+        "--patience",
+        type=int,
+        default=None,
+        help="stop after this many epochs with no improvement",
+    )
 
     run = parser.add_argument_group("run")
     run.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
@@ -101,6 +107,7 @@ def main() -> None:
         batch_size=args.batch_size,
         num_workers=args.workers,
         seed=args.seed,
+        patience=args.patience,
     )
 
     logger: Any = ConsoleLogger(args.checkpoint_dir / "run.jsonl")

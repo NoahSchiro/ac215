@@ -43,6 +43,8 @@ class TrainConfig:
     num_workers: int = 8
     seed: int = 0
     grad_clip: float | None = 1.0
+    patience: int | None = None
+    """Stop after this many epochs with no improvement. None disables it."""
 
 
 def forward_batch(
@@ -207,6 +209,7 @@ def fit(
 
     best_stats: ErrorStats | None = None
     last_stats: ErrorStats | None = None
+    stale = 0
     for epoch in range(start_epoch, config.epochs):
         started = time.monotonic()
         train_loss = train_one_epoch(
@@ -216,6 +219,7 @@ def fit(
         last_stats = stats
 
         improved = stats.mean < best_error
+        stale = 0 if improved else stale + 1
         if improved:
             best_error = stats.mean
             best_stats = stats
@@ -240,6 +244,13 @@ def fit(
                 },
             }
         )
+
+        if config.patience is not None and stale >= config.patience:
+            print(
+                f"stopping early: no improvement for {stale} epochs"
+                f" (best {best_error:.5f})"
+            )
+            break
 
     if best_stats is None:
         # A resumed run that never beat the earlier best is a normal outcome;

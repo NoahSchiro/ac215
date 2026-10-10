@@ -315,3 +315,46 @@ def test_fit_logs_val_loss_alongside_train_loss() -> None:
             Recorder(),
         )
     assert {"train_loss", "val_loss"} <= set(records[0])
+
+
+def test_early_stopping_halts_when_val_stops_improving(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Patience counts consecutive epochs with no improvement, then breaks."""
+    records: list[dict[str, Any]] = []
+
+    class Recorder:
+        def log(self, data: dict[str, Any]) -> None:
+            records.append(data)
+
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=20, batch_size=2, num_workers=0, patience=1),
+        tmp_path,
+        Recorder(),
+    )
+    # Far fewer than 20 epochs ran, and the reason was printed.
+    assert len(records) < 20
+    assert "stopping early" in capsys.readouterr().out
+
+
+def test_patience_none_runs_every_epoch(tmp_path: Path) -> None:
+    records: list[dict[str, Any]] = []
+
+    class Recorder:
+        def log(self, data: dict[str, Any]) -> None:
+            records.append(data)
+
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=3, batch_size=2, num_workers=0, patience=None),
+        tmp_path,
+        Recorder(),
+    )
+    assert len(records) == 3
