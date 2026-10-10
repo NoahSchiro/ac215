@@ -114,9 +114,10 @@ class GazeNet(nn.Module):
 
         logits = self.head(torch.cat(parts, dim=-1))
 
-        if self.output_mode == "screen_fraction":
-            return torch.sigmoid(logits)
-        return logits / torch.linalg.vector_norm(logits, dim=-1, keepdim=True)
+        if self.output_mode == "gaze_direction":
+            return logits / torch.linalg.vector_norm(logits, dim=-1, keepdim=True)
+        # screen_fraction: labels are fractions of the screen, so the range is known
+        return torch.sigmoid(logits)
 
     def parameter_count(self) -> int:
         """Trainable parameters."""

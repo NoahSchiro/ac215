@@ -117,10 +117,10 @@ def evaluate(
     for batch in tqdm(loader, desc="eval", leave=False):
         prediction, target = forward_batch(model, batch, device)
         total += float(compute_loss(model, criterion, prediction, target).item())
-        if model.output_mode == "screen_fraction":
-            errors.append(screen_fraction_error(prediction, target).cpu())
-        else:
+        if model.output_mode == "gaze_direction":
             errors.append(angular_error_deg(prediction, target).cpu())
+        else:
+            errors.append(screen_fraction_error(prediction, target).cpu())
         # sample_id looks like "<dataset>/<subject>/..."
         subjects.extend(sample_id.split("/")[1] for sample_id in batch["sample_id"])
     if not errors:
