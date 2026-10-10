@@ -425,6 +425,9 @@ def build_webdataset(
     - `{key}.png`       normalized face crop (224x224x3 RGB)
     - `{key}.eyes.npy`  uint8 (2, 36, 60, 3); [0] left, [1] right eye
 
+    Work is split between worker threads. Every thread runs the whole
+    pipeline (load -> process -> write its own shard files).
+
     Args:
         samples: parsed samples (e.g. from `parse_mpii`).
         path: directory for the shard files; created if missing.
@@ -434,48 +437,58 @@ def build_webdataset(
     workers = num_threads or os.cpu_count() or 1
     workers = max(1, min(workers, len(samples)))
 
-    thread_local = threading.local()
-    landmarker_lock = threading.Lock()
-
-    def thread_landmarker() -> Any:
-        """One FaceLandmarker instance per worker thread."""
-        if getattr(thread_local, "landmarker", None) is None:
-            with landmarker_lock:
-                thread_local.landmarker = get_landmarker()
-        return thread_local.landmarker
-
-    drop_counts: Counter[tuple[str, str]] = Counter()
-    written = 0
-
     path.mkdir(parents=True, exist_ok=True)
     for stale in path.glob("*.tar"):
-        stale.unlink()  # a rebuild must not mix in shards of a previous run
+        # Prevents a rebuild from mixing shards of a previous run
+        stale.unlink()  
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = pool.map(
-            lambda s: check_sample(thread_landmarker(), s),
-            samples,
-        )
+    landmarker_lock = threading.Lock()
+    progress = tqdm(total=len(samples))
+
+    def process_chunk(
+        chunk: list[Sample], worker_id: int
+    ) -> tuple[int, Counter[tuple[str, str]]]:
+        """Preprocess and write one thread's share of samples, one at a time."""
+        with landmarker_lock:
+            landmarker = get_landmarker()
+        written = 0
+        drop_counts: Counter[tuple[str, str]] = Counter()
+        # the worker id keeps each thread's shards disjoint, so threads
+        # never write to the same file
         with wds.ShardWriter(
-            str(path / f"{path.name}-%06d.tar"), maxcount=1000  # ~150 MB per shard
+            str(path / f"{path.name}-w{worker_id:03d}-%06d.tar"),
+            maxcount=1000,  # ~150 MB per shard
         ) as sink:
-            for sample, result in tqdm(zip(samples, results), total=len(samples)):
+            for sample in chunk:
+                result = check_sample(landmarker, sample)
                 if isinstance(result, str):
                     drop_counts[(sample.source_dataset.value, result)] += 1
-                    continue
-                sink.write({
-                    "__key__": result["sample_id"],
-                    "json": {
-                        **sample.to_manifest_entry(),
-                        "label": result["label"].tolist(),
-                        "R_norm": result["R_norm"].tolist(),
-                    },
-                    "png": result["face"],
-                    "eyes.npy": np.stack(
-                        [result["left_eye"], result["right_eye"]]
-                    ),
-                })
-                written += 1
+                else:
+                    sink.write({
+                        "__key__": result["sample_id"],
+                        "json": {
+                            **sample.to_manifest_entry(),
+                            "label": result["label"].tolist(),
+                            "R_norm": result["R_norm"].tolist(),
+                        },
+                        "png": result["face"],
+                        "eyes.npy": np.stack(
+                            [result["left_eye"], result["right_eye"]]
+                        ),
+                    })
+                    written += 1
+                progress.update(1)
+        return written, drop_counts
+
+    # one interleaved chunk per thread, so the workload stays balanced
+    chunks = [samples[i::workers] for i in range(workers)]
+    written = 0
+    drop_counts: Counter[tuple[str, str]] = Counter()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for count, drops in pool.map(process_chunk, chunks, range(workers)):
+            written += count
+            drop_counts.update(drops)
+    progress.close()
 
     print(
         f"wrote {written}/{len(samples)} samples to {path}"
