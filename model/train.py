@@ -1,21 +1,24 @@
-"""Train the gaze model on MPIIFaceGaze.
+"""Train the gaze model.
 
     uv run python train.py --val 13 --test 14 --epochs 30
 
 Splits are participant-disjoint: a subject never appears in both train and
-eval, because generalizing to a new face is the thing we are measuring.
+eval, because generalizing to an unseen face is what we are measuring.
 """
 
 import argparse
 from pathlib import Path
 from typing import Any
 
+import torch
 from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
+from src.training.logging import ConsoleLogger
 from src.training.loop import TrainConfig, evaluate, fit
-from src.training.model import GazeNet, select_device
-from src.training.splits import Split, holdout_split
+from src.training.model import GazeNet
+
+NUM_PARTICIPANTS = 15
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze",
     )
-    data.add_argument("--val", type=int, nargs="+", default=[13])
-    data.add_argument("--test", type=int, nargs="+", default=None)
+    data.add_argument("--val", type=int, default=13)
+    data.add_argument("--test", type=int, default=14)
 
     model = parser.add_argument_group("model")
     model.add_argument(
@@ -36,18 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="screen_fraction",
     )
     model.add_argument("--no-eyes", action="store_true", help="ablate the eye towers")
-    model.add_argument(
-        "--no-pretrained",
-        action="store_true",
-        help="random init (expect this to be worse)",
-    )
+    model.add_argument("--no-pretrained", action="store_true", help="random init")
 
     optim = parser.add_argument_group("optimization")
     optim.add_argument("--epochs", type=int, default=30)
     optim.add_argument("--lr", type=float, default=1e-4)
     optim.add_argument("--weight-decay", type=float, default=1e-4)
-    optim.add_argument("--batch-size", type=int, default=64)
-    optim.add_argument("--workers", type=int, default=4)
+    optim.add_argument("--batch-size", type=int, default=256)
+    optim.add_argument("--workers", type=int, default=8)
     optim.add_argument("--seed", type=int, default=0)
 
     run = parser.add_argument_group("run")
@@ -58,25 +57,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def make_logger(project: str | None, config: dict[str, Any]) -> Any:
-    """Optional W&B. Kept out of the training code so it stays an optional dep."""
-    if project is None:
-        return None
-    # Imported lazily so wandb stays an optional dependency.
-    import wandb
+def main() -> None:
+    args = build_parser().parse_args()
+    for name, participant in (("--val", args.val), ("--test", args.test)):
+        if not 0 <= participant < NUM_PARTICIPANTS:
+            raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
+    if args.val == args.test:
+        raise SystemExit("--val and --test must be different participants")
 
-    return wandb.init(project=project, config=config)
+    train_ids = [p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)]
+    print(f"train {train_ids}  val [{args.val}]  test [{args.test}]")
 
-
-def loaders(
-    split: Split, args: argparse.Namespace
-) -> tuple[DataLoader[Any], DataLoader[Any], DataLoader[Any] | None]:
-    """Build one loader per split half. Only train is shuffled."""
-
-    def loader(participants: tuple[int, ...], *, shuffle: bool) -> DataLoader[Any]:
-        dataset = MPII(list(participants), args.data_root)
+    def loader(participants: int | list[int], *, shuffle: bool) -> DataLoader[Any]:
         return DataLoader(
-            dataset,
+            MPII(participants, args.data_root),
             batch_size=args.batch_size,
             shuffle=shuffle,
             num_workers=args.workers,
@@ -84,21 +78,20 @@ def loaders(
             persistent_workers=args.workers > 0,
         )
 
-    test = loader(split.test, shuffle=False) if split.test else None
-    return loader(split.train, shuffle=True), loader(split.val, shuffle=False), test
-
-
-def main() -> None:
-    args = build_parser().parse_args()
-    split = holdout_split(val=args.val, test=args.test)
-    print(f"train {list(split.train)}  val {list(split.val)}  test {list(split.test)}")
+    if args.device != "auto":
+        device = torch.device(args.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     model = GazeNet(
-        args.output_mode,
+        output_mode=args.output_mode,
         pretrained=not args.no_pretrained,
         use_eyes=not args.no_eyes,
     )
-    device = select_device(args.device)
     print(f"{model.parameter_count() / 1e6:.2f}M parameters on {device}")
 
     config = TrainConfig(
@@ -109,27 +102,31 @@ def main() -> None:
         num_workers=args.workers,
         seed=args.seed,
     )
-    train_loader, val_loader, test_loader = loaders(split, args)
-    logger = make_logger(args.wandb, vars(args) | {"split": list(split.train)})
+
+    logger: Any = ConsoleLogger(args.checkpoint_dir / "run.jsonl")
+    if args.wandb is not None:
+        # Imported lazily so wandb stays an optional dependency.
+        import wandb
+
+        logger = wandb.init(project=args.wandb, config=vars(args))
 
     best = fit(
         model,
-        train_loader,
-        val_loader,
+        loader(train_ids, shuffle=True),
+        loader(args.val, shuffle=False),
         device,
         config,
         args.checkpoint_dir,
-        logger=logger,
+        logger,
         resume=args.resume,
     )
     print(f"\nbest val mean {best.mean:.5f} (median {best.median:.5f})")
     worst = best.worst_participant()
     if worst is not None:
-        print(f"worst participant: {worst[0]} at {worst[1]:.5f}")
+        print(f"worst participant: {worst[0]} at {worst[1].mean:.5f}")
 
-    if test_loader is not None:
-        stats = evaluate(model, test_loader, device)
-        print(f"test mean {stats.mean:.5f} over {stats.count} samples")
+    stats = evaluate(model, loader(args.test, shuffle=False), device)
+    print(f"test mean {stats.mean:.5f} over {stats.count} samples")
 
 
 if __name__ == "__main__":

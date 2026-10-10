@@ -1,9 +1,9 @@
-"""Tests for splits, metrics and the training loop.
+"""Tests for metrics, the model and the training loop.
 
-No MediaPipe here: these use a synthetic in-memory dataset, so the whole file
-runs on macOS where MediaPipe aborts in its Metal path.
+Uses a synthetic in-memory dataset, so nothing here touches the data pipeline.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,14 +12,14 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from src.data.utils import prepare_images
+from src.training.logging import ConsoleLogger
 from src.training.loop import (
     TrainConfig,
     evaluate,
     fit,
     load_checkpoint,
-    loss_for,
     save_checkpoint,
-    subject_of,
 )
 from src.training.metrics import (
     angular_error_deg,
@@ -28,17 +28,11 @@ from src.training.metrics import (
     screen_fraction_error,
     summarize,
 )
-from src.training.model import GazeNet, prepare_images, select_device
-from src.training.splits import (
-    ALL_PARTICIPANTS,
-    Split,
-    holdout_split,
-    leave_one_out_folds,
-)
+from src.training.model import GazeNet
 
 
 class FakeGaze(Dataset[dict[str, Any]]):
-    """Tiny stand-in for MPII with the same keys and dtypes."""
+    """Stand-in with the same keys and dtypes a real Dataset emits."""
 
     def __init__(self, subjects: tuple[int, ...], per_subject: int = 4) -> None:
         self.items: list[dict[str, Any]] = []
@@ -63,38 +57,6 @@ class FakeGaze(Dataset[dict[str, Any]]):
         return self.items[idx]
 
 
-# --- splits ---------------------------------------------------------------
-
-
-def test_holdout_puts_everyone_else_in_train() -> None:
-    split = holdout_split(val=13, test=14)
-    assert split.val == (13,)
-    assert split.test == (14,)
-    assert split.train == tuple(p for p in ALL_PARTICIPANTS if p not in (13, 14))
-    assert len(split.train) == 13
-
-
-def test_rejects_a_participant_in_two_splits() -> None:
-    with pytest.raises(ValueError, match="participant-disjoint"):
-        Split(train=(0, 1, 2), val=(2,))
-
-
-def test_rejects_out_of_range_and_duplicates() -> None:
-    with pytest.raises(ValueError, match="out of range"):
-        Split(train=(0,), val=(99,))
-    with pytest.raises(ValueError, match="duplicate"):
-        Split(train=(0, 0), val=(1,))
-
-
-def test_leave_one_out_covers_every_participant_exactly_once() -> None:
-    folds = leave_one_out_folds()
-    assert len(folds) == 15
-    assert sorted(fold.val[0] for fold in folds) == list(ALL_PARTICIPANTS)
-    for fold in folds:
-        assert len(fold.train) == 14
-        assert not set(fold.train) & set(fold.val)
-
-
 # --- metrics --------------------------------------------------------------
 
 
@@ -102,6 +64,11 @@ def test_screen_fraction_error_is_euclidean() -> None:
     predicted = torch.tensor([[0.0, 0.0], [0.5, 0.5]])
     target = torch.tensor([[3.0, 4.0], [0.5, 0.5]])
     assert screen_fraction_error(predicted, target).tolist() == [5.0, 0.0]
+
+
+def test_screen_fraction_error_rejects_shape_mismatch() -> None:
+    with pytest.raises(ValueError, match="shape mismatch"):
+        screen_fraction_error(torch.zeros(2, 2), torch.zeros(3, 2))
 
 
 def test_angular_error_on_known_angles() -> None:
@@ -113,19 +80,29 @@ def test_angular_error_on_known_angles() -> None:
 
 
 def test_fraction_converts_to_cm_then_degrees() -> None:
-    # 290x180 mm screen -> 34.1 cm diagonal; 10% error -> 3.4 cm -> ~3.5 deg
-    cm = fraction_to_cm(0.1, 290.0, 180.0)
-    assert cm == pytest.approx(3.41, abs=0.02)
-    assert cm_to_degrees(cm, 55.0) == pytest.approx(3.55, abs=0.05)
+    # 286x179mm screen -> 33.8cm diagonal; 10% error -> 3.4cm -> ~3.2deg at 60cm
+    cm = fraction_to_cm(0.1, 286.0, 179.0)
+    assert cm == pytest.approx(3.37, abs=0.02)
+    assert cm_to_degrees(cm, 60.0) == pytest.approx(3.22, abs=0.05)
 
 
-def test_summarize_breaks_down_per_participant() -> None:
-    errors = torch.tensor([0.1, 0.3, 0.2, 0.4])
-    stats = summarize(errors, ["p00", "p00", "p01", "p01"])
+def test_conversions_reject_nonsense_geometry() -> None:
+    with pytest.raises(ValueError, match="screen dimensions"):
+        fraction_to_cm(0.1, 0.0, 179.0)
+    with pytest.raises(ValueError, match="viewing distance"):
+        cm_to_degrees(3.0, 0.0)
+
+
+def test_summarize_nests_stats_per_participant() -> None:
+    stats = summarize(torch.tensor([0.1, 0.3, 0.2, 0.4]), ["p00", "p00", "p01", "p01"])
     assert stats.count == 4
     assert stats.mean == pytest.approx(0.25)
-    assert stats.per_participant == pytest.approx({"p00": 0.2, "p01": 0.3})
-    assert stats.worst_participant() == ("p01", pytest.approx(0.3))
+    assert stats.per_participant["p00"].mean == pytest.approx(0.2)
+    assert stats.per_participant["p01"].count == 2
+
+    worst, worst_stats = stats.worst_participant()  # type: ignore[misc]
+    assert worst == "p01"
+    assert worst_stats.mean == pytest.approx(0.3)
 
 
 def test_summarize_rejects_mismatched_subject_ids() -> None:
@@ -133,12 +110,17 @@ def test_summarize_rejects_mismatched_subject_ids() -> None:
         summarize(torch.tensor([0.1, 0.2]), ["p00"])
 
 
+def test_summarize_rejects_empty_input() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        summarize(torch.tensor([]))
+
+
 # --- model ----------------------------------------------------------------
 
 
 @pytest.mark.parametrize("mode,dim", [("screen_fraction", 2), ("gaze_direction", 3)])
 def test_output_shape_and_range_per_mode(mode: str, dim: int) -> None:
-    model = GazeNet(mode, pretrained=False)  # type: ignore[arg-type]
+    model = GazeNet(output_mode=mode, pretrained=False)  # type: ignore[arg-type]
     out = model(
         torch.zeros(2, 3, 224, 224),
         torch.zeros(2, 3, 36, 60),
@@ -153,25 +135,48 @@ def test_output_shape_and_range_per_mode(mode: str, dim: int) -> None:
         )
 
 
-def test_eye_towers_are_shared_not_duplicated() -> None:
-    with_eyes = GazeNet("screen_fraction", pretrained=False, use_eyes=True)
-    without = GazeNet("screen_fraction", pretrained=False, use_eyes=False)
-    # One shared tower (~0.17M), not two: the delta stays well under 0.4M.
+def test_eye_tower_is_shared_across_both_eyes() -> None:
+    with_eyes = GazeNet(pretrained=False, use_eyes=True)
+    without = GazeNet(pretrained=False, use_eyes=False)
+    # One shared tower, not two: the delta stays well under 0.4M parameters.
     assert with_eyes.parameter_count() - without.parameter_count() < 400_000
+
+
+def test_ablating_eyes_requires_only_the_face() -> None:
+    model = GazeNet(pretrained=False, use_eyes=False)
+    assert model(torch.zeros(2, 3, 224, 224)).shape == (2, 2)
+
+
+def test_eye_crops_are_required_when_enabled() -> None:
+    model = GazeNet(pretrained=False, use_eyes=True)
+    with pytest.raises(ValueError, match="requires both eye crops"):
+        model(torch.zeros(2, 3, 224, 224))
 
 
 def test_rejects_unknown_output_mode() -> None:
     with pytest.raises(ValueError, match="output_mode"):
-        GazeNet("sideways")  # type: ignore[arg-type]
+        GazeNet(output_mode="sideways")  # type: ignore[arg-type]
 
 
-def test_prepare_images_converts_hwc_uint8_to_normalized_chw() -> None:
+def test_output_mode_is_keyword_only() -> None:
+    with pytest.raises(TypeError):
+        GazeNet("screen_fraction")  # type: ignore[misc]
+
+
+# --- image prep -----------------------------------------------------------
+
+
+def test_prepare_images_applies_imagenet_statistics() -> None:
     batch = torch.full((2, 36, 60, 3), 255, dtype=torch.uint8)
-    out = prepare_images(batch, torch.device("cpu"))
+    out = prepare_images(batch, torch.device("cpu"), imagenet=True)
     assert out.shape == (2, 3, 36, 60)
-    assert out.dtype == torch.float32
-    # 1.0 normalized by ImageNet stats, not raw 255
     assert out.max().item() == pytest.approx((1.0 - 0.406) / 0.225, abs=1e-4)
+
+
+def test_prepare_images_can_skip_imagenet_statistics() -> None:
+    batch = torch.full((2, 36, 60, 3), 255, dtype=torch.uint8)
+    out = prepare_images(batch, torch.device("cpu"), imagenet=False)
+    assert out.max().item() == pytest.approx(1.0)
 
 
 def test_prepare_images_rejects_wrong_layout() -> None:
@@ -181,33 +186,28 @@ def test_prepare_images_rejects_wrong_layout() -> None:
         )
 
 
+# --- logging --------------------------------------------------------------
+
+
+def test_console_logger_appends_json_lines(tmp_path: Path) -> None:
+    logger = ConsoleLogger(tmp_path / "run.jsonl")
+    logger.log({"epoch": 0, "val_mean": 0.5})
+    logger.log({"epoch": 1, "val_mean": 0.4})
+    lines = (tmp_path / "run.jsonl").read_text().strip().split("\n")
+    assert [json.loads(line)["val_mean"] for line in lines] == [0.5, 0.4]
+
+
 # --- loop -----------------------------------------------------------------
 
 
-def test_subject_parses_out_of_sample_id() -> None:
-    assert subject_of("mpiifacegaze/p07/day01/0005") == "p07"
-    with pytest.raises(ValueError, match="subject"):
-        subject_of("nope")
-
-
-def test_loss_matches_the_output_mode() -> None:
-    assert isinstance(loss_for("screen_fraction"), torch.nn.MSELoss)
-    assert isinstance(loss_for("gaze_direction"), torch.nn.CosineEmbeddingLoss)
-    with pytest.raises(ValueError, match="no loss defined"):
-        loss_for("sideways")
-
-
 def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
-    model = GazeNet("screen_fraction", pretrained=False)
+    model = GazeNet(pretrained=False)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     path = tmp_path / "last.pt"
-    save_checkpoint(
-        path, model, optimizer, epoch=4, best_error=0.25, config=TrainConfig()
-    )
+    save_checkpoint(path, model, optimizer, 4, 0.25, TrainConfig())
 
-    restored = GazeNet("screen_fraction", pretrained=False)
-    next_epoch, best = load_checkpoint(path, restored)
-    assert (next_epoch, best) == (5, 0.25)
+    restored = GazeNet(pretrained=False)
+    assert load_checkpoint(path, restored) == (5, 0.25)
     for a, b in zip(
         model.state_dict().values(), restored.state_dict().values(), strict=True
     ):
@@ -216,20 +216,17 @@ def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
 
 def test_checkpoint_refuses_a_mismatched_output_mode(tmp_path: Path) -> None:
     path = tmp_path / "last.pt"
-    model = GazeNet("screen_fraction", pretrained=False)
+    model = GazeNet(pretrained=False)
     save_checkpoint(
         path, model, torch.optim.AdamW(model.parameters()), 0, 1.0, TrainConfig()
     )
     with pytest.raises(ValueError, match="checkpoint is screen_fraction"):
-        load_checkpoint(path, GazeNet("gaze_direction", pretrained=False))
+        load_checkpoint(path, GazeNet(output_mode="gaze_direction", pretrained=False))
 
 
-def test_fit_runs_writes_checkpoints_and_logs(tmp_path: Path) -> None:
-    split = Split(train=(0, 1), val=(2,))
-    train_loader = DataLoader(FakeGaze(split.train), batch_size=2)
-    val_loader = DataLoader(FakeGaze(split.val), batch_size=2)
-    model = GazeNet("screen_fraction", pretrained=False)
-
+def test_fit_runs_checkpoints_and_logs(tmp_path: Path) -> None:
+    train_loader = DataLoader(FakeGaze((0, 1)), batch_size=2)
+    val_loader = DataLoader(FakeGaze((2,)), batch_size=2)
     logged: list[dict[str, Any]] = []
 
     class Recorder:
@@ -237,13 +234,13 @@ def test_fit_runs_writes_checkpoints_and_logs(tmp_path: Path) -> None:
             logged.append(data)
 
     best = fit(
-        model,
+        GazeNet(pretrained=False),
         train_loader,
         val_loader,
         torch.device("cpu"),
         TrainConfig(epochs=2, batch_size=2, num_workers=0),
         tmp_path,
-        logger=Recorder(),
+        Recorder(),
     )
 
     assert best.count == 4
@@ -251,41 +248,46 @@ def test_fit_runs_writes_checkpoints_and_logs(tmp_path: Path) -> None:
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "best_metrics.json").is_file()
     assert len(logged) == 2
-    assert "val_p02" in logged[0]  # per-participant breakdown reaches the tracker
+    assert "val_p02" in logged[0]
 
 
 def test_fit_resumes_from_the_last_checkpoint(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    split = Split(train=(0,), val=(1,))
-    train_loader = DataLoader(FakeGaze(split.train), batch_size=2)
-    val_loader = DataLoader(FakeGaze(split.val), batch_size=2)
-    config = TrainConfig(epochs=1, batch_size=2, num_workers=0)
+    train_loader = DataLoader(FakeGaze((0,)), batch_size=2)
+    val_loader = DataLoader(FakeGaze((1,)), batch_size=2)
 
-    model = GazeNet("screen_fraction", pretrained=False)
-    fit(model, train_loader, val_loader, torch.device("cpu"), config, tmp_path)
+    class Null:
+        def log(self, data: dict[str, Any]) -> None: ...
 
-    resumed = GazeNet("screen_fraction", pretrained=False)
+    args = (torch.device("cpu"),)
     fit(
-        resumed,
+        GazeNet(pretrained=False),
         train_loader,
         val_loader,
-        torch.device("cpu"),
+        *args,
+        TrainConfig(epochs=1, batch_size=2, num_workers=0),
+        tmp_path,
+        Null(),
+    )
+    fit(
+        GazeNet(pretrained=False),
+        train_loader,
+        val_loader,
+        *args,
         TrainConfig(epochs=2, batch_size=2, num_workers=0),
         tmp_path,
+        Null(),
         resume=True,
     )
     assert "resumed from" in capsys.readouterr().out
 
 
 def test_evaluate_reports_per_participant_error() -> None:
-    model = GazeNet("screen_fraction", pretrained=False)
-    loader = DataLoader(FakeGaze((3, 4)), batch_size=4)
-    stats = evaluate(model, loader, torch.device("cpu"))
+    stats = evaluate(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((3, 4)), batch_size=4),
+        torch.device("cpu"),
+    )
     assert stats.count == 8
     assert sorted(stats.per_participant) == ["p03", "p04"]
-
-
-def test_select_device_honours_an_explicit_choice() -> None:
-    assert select_device("cpu") == torch.device("cpu")
-    assert select_device("auto").type in {"cpu", "cuda", "mps"}

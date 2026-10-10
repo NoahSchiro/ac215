@@ -81,54 +81,49 @@ uv run python main.py
 
 ## Training
 
-### Why this runs in a container
-
-MediaPipe's FaceLandmarker aborts on macOS, inside Metal, with both the CPU and
-GPU delegate. The pipeline needs it for manifest building and for every
-`__getitem__`, so the model cannot run natively on a Mac at all. A Linux
-container has no Metal, so MediaPipe falls back to XNNPACK — the same path CI
-uses on Ubuntu. Linux users can skip the container and run `train.py` directly.
-
-The tradeoff: Docker Desktop on macOS does not pass through Apple's GPU, so
-training in the container is CPU-only. Once preprocessed crops are cached to
-disk (PR #32), training will no longer need MediaPipe and can run natively on
-MPS instead.
-
 ### Running it
 
 ```bash
-docker compose run --rm train                      # defaults in docker-compose.yml
+uv run python train.py --val 13 --test 14 --epochs 30
+```
+
+The crops are cached as a webdataset, so training reads from disk and does not
+run MediaPipe. It uses CUDA, then Apple MPS, then CPU, whichever is available
+first; override with `--device`.
+
+### Running it in a container
+
+MediaPipe's FaceLandmarker aborts on some macOS setups inside Metal (observed
+on an M-series Mac with both the CPU and GPU delegate), which blocks *building*
+the cache. A Linux container has no Metal and falls back to XNNPACK:
+
+```bash
+docker compose run --rm train                      # defaults from docker-compose.yml
 docker compose run --rm train --epochs 1 --val 5   # arguments override
 ```
 
-Or directly, without compose:
+Note Docker Desktop on macOS does not pass through the GPU, so a containerized
+run is CPU-only. Build the cache in the container, then train natively to use
+MPS.
 
-```bash
-docker build -t gaze-model:dev ./model
-docker run --rm --shm-size=2g \
-  -v "$PWD/data:/data" -v "$PWD/model/checkpoints:/app/checkpoints" \
-  gaze-model:dev --data-root /data/MPIIFaceGaze --val 13 --test 14 --epochs 1
-```
+`--shm-size=2g` is required when running `docker run` directly. PyTorch's
+DataLoader passes tensors between workers through `/dev/shm`, which Docker
+defaults to 64MB; a batch of 224x224 images overruns it and fails with
+`No space left on device`, which looks like a full disk but is not. Compose
+sets this via `shm_size`.
 
-`--shm-size=2g` is required. PyTorch's DataLoader passes tensors between worker
-processes through `/dev/shm`, which Docker defaults to 64MB; a batch of 224x224
-images overruns it and fails with `No space left on device`, which looks like a
-full disk but is not. Compose sets this via `shm_size`.
-
-### What the training code does
+### Layout
 
 | Module | Role |
 |---|---|
-| `src/training/splits.py` | Participant-disjoint splits. `Split` validates pairwise disjointness at construction, so an overlapping split fails loudly rather than reporting an inflated number. |
-| `src/training/model.py` | `GazeNet`: an ImageNet-pretrained ResNet-18 over the face crop, plus one eye tower shared across both eyes (the left is flipped into the right's orientation). 11.48M parameters, 11.31M of which is the backbone. |
-| `src/training/metrics.py` | Mean/median/p95 plus a per-participant breakdown, with converters to cm and degrees so results compare against published MPIIFaceGaze figures. |
-| `src/training/loop.py` | Train/eval loops, per-epoch and best checkpointing, resume. Experiment tracking goes through a `RunLogger` protocol, so wandb stays an optional import. |
+| `src/training/model.py` | `GazeNet`: a ResNet-18 face tower plus one eye tower shared across both eyes, with the left crop flipped into the right's orientation. `--no-pretrained` switches to random init; `--no-eyes` ablates the eye towers. |
+| `src/training/metrics.py` | Mean, median and p95, plus a per-participant breakdown, with converters to cm and degrees for comparison against published figures. |
+| `src/training/loop.py` | Train and eval loops, per-epoch and best checkpointing, resume. |
+| `src/training/logging.py` | `RunLogger` protocol and a console logger that prints and appends JSON lines to `checkpoints/run.jsonl`. A wandb run satisfies the same protocol; pass `--wandb PROJECT`. |
 
-The output head is a constructor argument (`screen_fraction` or
-`gaze_direction`) because the label frame is still open: `normalize_face` warps
-the crop into a head-centered frame, but the emitted label is a raw screen
-fraction, which depends on head position relative to the screen. Swapping the
-head is a CLI flag, not a rewrite.
+`--output-mode` selects the head. We train on `screen_fraction` today;
+`gaze_direction` is wired up for the normalized-space formulation if we move
+to it.
 
 ### Data versioning
 

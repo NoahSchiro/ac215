@@ -1,9 +1,9 @@
 """Evaluation metrics.
 
-Mean error is the headline number, but it does not predict whether the model
-is usable as a controller: a model with low mean error and high frame-to-frame
-jitter produces a ball that vibrates. We track both, plus a per-participant
-breakdown, because an average over 15 subjects hides the one it fails on.
+Mean error is the headline number, but it does not say whether the model is
+usable as a controller: low mean error with high frame-to-frame jitter gives a
+pointer that vibrates. We report spread alongside the mean, and break results
+down per participant so an average cannot hide the subject the model fails on.
 """
 
 from dataclasses import dataclass, field
@@ -21,12 +21,12 @@ class ErrorStats:
     median: float
     p95: float
     count: int
-    per_participant: dict[str, float] = field(default_factory=dict)
+    per_participant: dict[str, ErrorStats] = field(default_factory=dict)
 
-    def worst_participant(self) -> tuple[str, float] | None:
+    def worst_participant(self) -> tuple[str, ErrorStats] | None:
         if not self.per_participant:
             return None
-        subject = max(self.per_participant, key=lambda k: self.per_participant[k])
+        subject = max(self.per_participant, key=lambda k: self.per_participant[k].mean)
         return subject, self.per_participant[subject]
 
 
@@ -40,10 +40,7 @@ def screen_fraction_error(
 
 
 def angular_error_deg(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Angle between predicted and target gaze directions, in degrees.
-
-    Both (B, 3); they are re-normalized here so callers need not.
-    """
+    """Angle between predicted and target gaze directions in degrees (both (B, 3))."""
     predicted = predicted / torch.linalg.vector_norm(predicted, dim=-1, keepdim=True)
     target = target / torch.linalg.vector_norm(target, dim=-1, keepdim=True)
     cosine = torch.clamp((predicted * target).sum(dim=-1), -1.0, 1.0)
@@ -55,12 +52,10 @@ def fraction_to_cm(
     screen_width_mm: float,
     screen_height_mm: float,
 ) -> NDArray[np.float64] | float:
-    """Convert screen-fraction error to centimetres on a given screen.
+    """Convert screen-fraction error to centimetres on a given display.
 
     Fraction error is dimensionless, so the physical error depends on the
-    display. We use the diagonal extent as the scale, which is exact for
-    errors along the diagonal and within ~20% otherwise -- good enough to
-    sanity-check against the published degree figures.
+    screen. The diagonal extent is used as the scale.
     """
     if screen_width_mm <= 0 or screen_height_mm <= 0:
         raise ValueError("screen dimensions must be positive")
@@ -69,13 +64,9 @@ def fraction_to_cm(
 
 
 def cm_to_degrees(
-    error_cm: NDArray[np.float64] | float, viewing_distance_cm: float = 55.0
+    error_cm: NDArray[np.float64] | float, viewing_distance_cm: float = 60.0
 ) -> NDArray[np.float64] | float:
-    """Convert an on-screen error to visual angle, for comparison with papers.
-
-    55 cm is the usual seated laptop distance. Published MPIIFaceGaze numbers
-    are in degrees, so this is how our screen-space error becomes comparable.
-    """
+    """Convert on-screen error to visual angle, for comparison with the literature."""
     if viewing_distance_cm <= 0:
         raise ValueError("viewing distance must be positive")
     return np.rad2deg(np.arctan2(error_cm, viewing_distance_cm))
@@ -87,17 +78,18 @@ def summarize(errors: torch.Tensor, subject_ids: list[str] | None = None) -> Err
         raise ValueError("cannot summarize an empty error tensor")
     values = errors.detach().float().cpu().numpy()
 
-    per_participant: dict[str, float] = {}
+    per_participant: dict[str, ErrorStats] = {}
     if subject_ids is not None:
         if len(subject_ids) != len(values):
             raise ValueError(
                 f"got {len(subject_ids)} subject ids for {len(values)} errors"
             )
-        totals: dict[str, list[float]] = {}
+        grouped: dict[str, list[float]] = {}
         for subject, value in zip(subject_ids, values, strict=True):
-            totals.setdefault(subject, []).append(float(value))
+            grouped.setdefault(subject, []).append(float(value))
         per_participant = {
-            subject: float(np.mean(group)) for subject, group in sorted(totals.items())
+            subject: summarize(torch.tensor(group))
+            for subject, group in sorted(grouped.items())
         }
 
     return ErrorStats(

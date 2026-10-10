@@ -1,39 +1,23 @@
-"""Train and evaluate loops, with checkpointing.
-
-Checkpointing is written in from the start rather than retrofitted: training
-runs on a rented VM that can be preempted, so a run has to survive losing its
-machine. Every epoch writes `last.pt`, and improvements write `best.pt`; both
-are plain files, so pointing them at a mounted bucket is all the cloud
-integration needed.
-
-Experiment tracking goes through `RunLogger`, which is a protocol rather than
-a hard dependency. A W&B run object satisfies it as-is, so wiring it in is an
-import in the entrypoint, not a change here.
-"""
+"""Train and evaluate loops, with checkpointing and resume."""
 
 import json
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from src.data.utils import prepare_images
+from src.training.logging import RunLogger
 from src.training.metrics import (
     ErrorStats,
     angular_error_deg,
     screen_fraction_error,
     summarize,
 )
-from src.training.model import GazeNet, prepare_images
-
-
-class RunLogger(Protocol):
-    """Minimal surface we need from an experiment tracker (wandb fits)."""
-
-    def log(self, data: dict[str, Any]) -> None: ...
+from src.training.model import GazeNet
 
 
 @dataclass
@@ -41,52 +25,30 @@ class TrainConfig:
     epochs: int = 30
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
-    batch_size: int = 64
-    num_workers: int = 4
+    batch_size: int = 256
+    num_workers: int = 8
     seed: int = 0
     grad_clip: float | None = 1.0
 
 
-def subject_of(sample_id: str) -> str:
-    """ "mpiifacegaze/p03/day01/0005" -> "p03"."""
-    parts = sample_id.split("/")
-    if len(parts) < 2:
-        raise ValueError(f"cannot read a subject from sample_id {sample_id!r}")
-    return parts[1]
-
-
-def loss_for(output_mode: str) -> nn.Module:
-    """Screen fractions are coordinates (MSE); directions are angles (cosine)."""
-    if output_mode == "screen_fraction":
-        return nn.MSELoss()
-    if output_mode == "gaze_direction":
-        return nn.CosineEmbeddingLoss()
-    raise ValueError(f"no loss defined for output_mode {output_mode!r}")
-
-
-def _forward(
+def forward_batch(
     model: GazeNet, batch: dict[str, Any], device: torch.device
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Move one batch to device and run it. Returns (prediction, target)."""
-    face = prepare_images(batch["face"], device)
+    """Move one collated batch to device and run it. Returns (prediction, target).
+
+    `batch` is a dict of stacked tensors, not a list of per-sample dicts:
+    torch's default collate turns a list of dicts into a dict of batches.
+    """
+    face = prepare_images(batch["face"], device, imagenet=model.pretrained)
     if model.use_eyes:
         prediction = model(
             face,
-            prepare_images(batch["left_eye"], device),
-            prepare_images(batch["right_eye"], device),
+            prepare_images(batch["left_eye"], device, imagenet=model.pretrained),
+            prepare_images(batch["right_eye"], device, imagenet=model.pretrained),
         )
     else:
         prediction = model(face)
     return prediction, batch["label"].to(device, non_blocking=True).float()
-
-
-def _criterion_value(
-    criterion: nn.Module, prediction: torch.Tensor, target: torch.Tensor
-) -> torch.Tensor:
-    if isinstance(criterion, nn.CosineEmbeddingLoss):
-        ones = torch.ones(prediction.shape[0], device=prediction.device)
-        return criterion(prediction, target, ones)
-    return criterion(prediction, target)
 
 
 def train_one_epoch(
@@ -103,8 +65,12 @@ def train_one_epoch(
     seen = 0
     for batch in loader:
         optimizer.zero_grad(set_to_none=True)
-        prediction, target = _forward(model, batch, device)
-        loss = _criterion_value(criterion, prediction, target)
+        prediction, target = forward_batch(model, batch, device)
+        if model.output_mode == "gaze_direction":
+            ones = torch.ones(prediction.shape[0], device=device)
+            loss = criterion(prediction, target, ones)
+        else:
+            loss = criterion(prediction, target)
         loss.backward()
         if grad_clip is not None:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -118,21 +84,20 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: GazeNet,
-    loader: DataLoader[Any],
-    device: torch.device,
+    model: GazeNet, loader: DataLoader[Any], device: torch.device
 ) -> ErrorStats:
     """Error over the whole loader, broken down per participant."""
     model.eval()
     errors: list[torch.Tensor] = []
     subjects: list[str] = []
     for batch in loader:
-        prediction, target = _forward(model, batch, device)
+        prediction, target = forward_batch(model, batch, device)
         if model.output_mode == "screen_fraction":
             errors.append(screen_fraction_error(prediction, target).cpu())
         else:
             errors.append(angular_error_deg(prediction, target).cpu())
-        subjects.extend(subject_of(sample_id) for sample_id in batch["sample_id"])
+        # sample_id looks like "<dataset>/<subject>/..."
+        subjects.extend(sample_id.split("/")[1] for sample_id in batch["sample_id"])
     if not errors:
         raise ValueError("evaluation loader produced no batches")
     return summarize(torch.cat(errors), subjects)
@@ -146,7 +111,7 @@ def save_checkpoint(
     best_error: float,
     config: TrainConfig,
 ) -> None:
-    """Everything needed to resume on a different machine."""
+    """Everything needed to resume, including on another machine."""
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
@@ -163,9 +128,7 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    path: Path,
-    model: GazeNet,
-    optimizer: torch.optim.Optimizer | None = None,
+    path: Path, model: GazeNet, optimizer: torch.optim.Optimizer | None = None
 ) -> tuple[int, float]:
     """Restore weights (and optimizer, if given). Returns (next_epoch, best)."""
     state = torch.load(path, map_location="cpu", weights_only=False)
@@ -186,7 +149,7 @@ def fit(
     device: torch.device,
     config: TrainConfig,
     checkpoint_dir: Path,
-    logger: RunLogger | None = None,
+    logger: RunLogger,
     resume: bool = False,
 ) -> ErrorStats:
     """Train for `config.epochs`, returning the best validation stats."""
@@ -196,7 +159,11 @@ def fit(
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
-    criterion = loss_for(model.output_mode)
+    criterion: nn.Module = (
+        nn.CosineEmbeddingLoss()
+        if model.output_mode == "gaze_direction"
+        else nn.MSELoss()
+    )
 
     start_epoch = 0
     best_error = float("inf")
@@ -208,13 +175,11 @@ def fit(
     best_stats: ErrorStats | None = None
     last_stats: ErrorStats | None = None
     for epoch in range(start_epoch, config.epochs):
-        started = time.time()
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip
         )
         stats = evaluate(model, val_loader, device)
         last_stats = stats
-        elapsed = time.time() - started
 
         improved = stats.mean < best_error
         if improved:
@@ -225,28 +190,24 @@ def fit(
             )
         save_checkpoint(last_path, model, optimizer, epoch, best_error, config)
 
-        record = {
-            "epoch": epoch,
-            "train_loss": train_loss,
-            "val_mean": stats.mean,
-            "val_median": stats.median,
-            "val_p95": stats.p95,
-            "seconds": elapsed,
-        }
-        if logger is not None:
-            logger.log(
-                record | {f"val_{k}": v for k, v in stats.per_participant.items()}
-            )
-        marker = " *" if improved else ""
-        print(
-            f"epoch {epoch:3d}  loss {train_loss:.5f}"
-            f"  val {stats.mean:.5f} (p95 {stats.p95:.5f})  {elapsed:.0f}s{marker}"
+        logger.log(
+            {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_mean": stats.mean,
+                "val_median": stats.median,
+                "val_p95": stats.p95,
+                "improved": improved,
+                **{
+                    f"val_{subject}": s.mean
+                    for subject, s in stats.per_participant.items()
+                },
+            }
         )
 
     if best_stats is None:
-        # A resumed run that never beat the earlier best is a normal outcome,
-        # so report the final epoch and leave the previous best_metrics.json
-        # (which describes a better checkpoint) alone.
+        # A resumed run that never beat the earlier best is a normal outcome;
+        # report the final epoch and leave the previous best_metrics.json.
         if last_stats is None:
             raise RuntimeError("training ran zero epochs; nothing to report")
         return last_stats

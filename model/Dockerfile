@@ -54,7 +54,7 @@ RUN chmod 644 /app/models/landmarker.task
 # expensive layers above are reused from cache.
 COPY src/ ./src/
 COPY tests/ ./tests/
-COPY main.py train.py ./
+COPY train.py ./
 
 # PYTHONUNBUFFERED makes print() appear immediately rather than sitting in a
 # buffer, so `docker logs` shows training progress live instead of in bursts.
