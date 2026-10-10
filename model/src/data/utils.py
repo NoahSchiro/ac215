@@ -548,11 +548,6 @@ def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
     }
 
 
-# ImageNet statistics, for models initialized from ImageNet weights.
-_IMAGENET_MEAN = (0.485, 0.456, 0.406)
-_IMAGENET_STD = (0.229, 0.224, 0.225)
-
-
 def prepare_images(
     batch: torch.Tensor, device: torch.device, *, imagenet: bool = True
 ) -> torch.Tensor:
@@ -573,6 +568,6 @@ def prepare_images(
     images = batch.to(device, non_blocking=True).permute(0, 3, 1, 2).float() / 255.0
     if not imagenet:
         return images
-    mean = torch.tensor(_IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
-    std = torch.tensor(_IMAGENET_STD, device=device).view(1, 3, 1, 1)
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
     return (images - mean) / std

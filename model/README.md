@@ -67,15 +67,12 @@ Loads the filtered manifest, or builds it from scratch and places it at `data/MP
 
 ### Running it
 
-`main.py` builds the filtered manifest or loads it if it is already built
-
-```bash
-uv run python main.py
-```
+The cache is built on first use, so the first run is slow and later ones are
+not. `train.py` is the only entry point.
 
 ### Notes
 
-- Nothing but the manifest is written to disk; crops and labels are recomputed per `__getitem__`. At our current scale, this is okay, but if we start getting up to millions of samples, a significant fraction of our compute time will be re-running preprocessing steps for each epoch. So might be worth it to cache.
+- Crops and labels are computed once into webdataset shards, so `__getitem__` is a shard read plus a PNG decode rather than a MediaPipe pass. The shards are ~2.9GB for MPIIFaceGaze.
 - Filtering thresholds live as constants in `filter_dataset`; the virtual-camera parameters are constants in `normalize_face`. Both must stay identical across datasets and match the TypeScript port of steps 2 and 4 planned for browser inference.
 - Adding a second dataset should be simple write a new parser to `Sample`, pass those samples through `filter_dataset()` and wrap it up in a torch Dataset.
 
@@ -84,7 +81,7 @@ uv run python main.py
 ### Running it
 
 ```bash
-uv run python train.py --val 13 --test 14 --epochs 30
+uv run train.py --val 13 --test 14 --epochs 30
 ```
 
 The crops are cached as a webdataset, so training reads from disk and does not
