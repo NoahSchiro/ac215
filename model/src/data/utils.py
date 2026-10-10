@@ -22,6 +22,7 @@ from urllib.request import urlretrieve
 import cv2
 import mediapipe as mp
 import numpy as np
+import torch
 import webdataset as wds
 from mediapipe.tasks.python.core.base_options import BaseOptions
 from mediapipe.tasks.python.vision import (
@@ -315,7 +316,7 @@ def transform_label(
 
 
 def check_sample(
-    landmarker: Any, sample: Sample, max_reproj: float = 0.1 
+    landmarker: Any, sample: Sample, max_reproj: float = 0.1
 ) -> dict[str, Any] | str:
     """Run every preprocessing step on one sample.
 
@@ -367,14 +368,14 @@ def check_sample(
     camera_focal = sample.camera_intrinsics.focal_length_px
     camera_x = sample.camera_intrinsics.principal_point.x
     camera_y = sample.camera_intrinsics.principal_point.y
-    K = np.array([
-        [camera_focal, 0.0, camera_x],
-        [0.0, camera_focal, camera_y],
-        [0.0, 0.0, 1.0],
-    ])
-    observed = np.array(
-        [[landmarks[i].x, landmarks[i].y] for i in _MODEL_LANDMARK_IDS]
+    K = np.array(
+        [
+            [camera_focal, 0.0, camera_x],
+            [0.0, camera_focal, camera_y],
+            [0.0, 0.0, 1.0],
+        ]
     )
+    observed = np.array([[landmarks[i].x, landmarks[i].y] for i in _MODEL_LANDMARK_IDS])
     projected, _ = cv2.projectPoints(
         _GENERIC_FACE_MODEL, cv2.Rodrigues(R)[0], t, K, None
     )
@@ -457,24 +458,25 @@ def build_webdataset(
             samples,
         )
         with wds.ShardWriter(
-            str(path / f"{path.name}-%06d.tar"), maxcount=1000  # ~150 MB per shard
+            str(path / f"{path.name}-%06d.tar"),
+            maxcount=1000,  # ~150 MB per shard
         ) as sink:
             for sample, result in tqdm(zip(samples, results), total=len(samples)):
                 if isinstance(result, str):
                     drop_counts[(sample.source_dataset.value, result)] += 1
                     continue
-                sink.write({
-                    "__key__": result["sample_id"],
-                    "json": {
-                        **sample.to_manifest_entry(),
-                        "label": result["label"].tolist(),
-                        "R_norm": result["R_norm"].tolist(),
-                    },
-                    "png": result["face"],
-                    "eyes.npy": np.stack(
-                        [result["left_eye"], result["right_eye"]]
-                    ),
-                })
+                sink.write(
+                    {
+                        "__key__": result["sample_id"],
+                        "json": {
+                            **sample.to_manifest_entry(),
+                            "label": result["label"].tolist(),
+                            "R_norm": result["R_norm"].tolist(),
+                        },
+                        "png": result["face"],
+                        "eyes.npy": np.stack([result["left_eye"], result["right_eye"]]),
+                    }
+                )
                 written += 1
 
     print(
@@ -495,9 +497,7 @@ def shard_index(shard: str) -> dict[str, tuple[int, int]]:
     """
     with tarfile.open(shard, "r") as tf:
         return {
-            info.name: (info.offset_data, info.size)
-            for info in tf
-            if info.isfile()
+            info.name: (info.offset_data, info.size) for info in tf if info.isfile()
         }
 
 
@@ -546,3 +546,28 @@ def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
         "label": np.array(meta["label"], dtype=np.float32),
         "R_norm": np.array(meta["R_norm"], dtype=np.float64),
     }
+
+
+def prepare_images(
+    batch: torch.Tensor, device: torch.device, *, imagenet: bool = True
+) -> torch.Tensor:
+    """uint8 (B, H, W, 3) crops from a Dataset -> normalized float (B, 3, H, W).
+
+    Datasets hand back HWC uint8 because that is what OpenCV produces. The
+    conversion happens on device so the DataLoader stays cheap.
+
+    Args:
+        batch: stacked crops as uint8.
+        device: where to move and convert them.
+        imagenet: normalize with ImageNet statistics, which a model
+            initialized from ImageNet weights expects. False scales to
+            [0, 1] only, for a randomly initialized model.
+    """
+    if batch.ndim != 4 or batch.shape[-1] != 3:
+        raise ValueError(f"expected (B, H, W, 3), got {tuple(batch.shape)}")
+    images = batch.to(device, non_blocking=True).permute(0, 3, 1, 2).float() / 255.0
+    if not imagenet:
+        return images
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+    return (images - mean) / std

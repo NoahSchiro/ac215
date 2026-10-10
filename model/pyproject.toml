@@ -13,6 +13,7 @@ dependencies = [
     "opencv-python-headless>=5.0.0.93",
     "scipy>=1.18.1",
     "torch>=2.14.1",
+    "torchvision>=0.29.1",
     "tqdm>=4.70.1",
     "webdataset>=1.0.2",
 ]
@@ -42,4 +43,14 @@ ignore_missing_imports = true
 # webdataset ships .pyi stubs but no py.typed marker, so mypy skips them
 [[tool.mypy.overrides]]
 module = "webdataset.*"
+ignore_missing_imports = true
+
+# torchvision ships no py.typed marker
+[[tool.mypy.overrides]]
+module = "torchvision.*"
+ignore_missing_imports = true
+
+# wandb is an optional extra; the import in train.py is lazy and guarded
+[[tool.mypy.overrides]]
+module = "wandb.*"
 ignore_missing_imports = true
