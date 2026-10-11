@@ -141,6 +141,7 @@ class Sample:
     screen_size_px: SizePx
     gaze_target_px: PointPx
     device_type: DeviceType
+    gaze_direction_cam: NDArray[np.float64] | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.source_dataset, SourceDataset):

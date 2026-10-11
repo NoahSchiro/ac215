@@ -66,6 +66,8 @@ def parse_mpii_sample(subject_dir: Path, line: str) -> Sample | None:
         gaze_y = float(fields[2])
         if not (math.isfinite(gaze_x) and math.isfinite(gaze_y)):
             raise ValueError(f"gaze target is not finite: {fields[1]}, {fields[2]}")
+        fc = np.array([float(v) for v in fields[21:24]])
+        gt = np.array([float(v) for v in fields[24:27]])
 
         intrinsics, screen_size_px, screen_size_mm = _load_calibration(subject_dir)
         return Sample(
@@ -81,6 +83,7 @@ def parse_mpii_sample(subject_dir: Path, line: str) -> Sample | None:
             screen_size_mm=screen_size_mm,
             screen_size_px=screen_size_px,
             gaze_target_px=PointPx(x=gaze_x, y=gaze_y),
+            gaze_direction_cam=gt - fc,
             device_type=DeviceType.Laptop,
         )
     except Exception as exc:  # noqa: BLE001 anything unparseable just gets dropped

@@ -401,16 +401,24 @@ def check_sample(
     face, left_eye, right_eye, R_virtual = normalize_face(
         image, landmarks, R, t, sample.camera_intrinsics
     )
-    fraction, _ = transform_label(
-        sample.gaze_target_px, sample.screen_size_px, R_virtual
+    fraction, direction = transform_label(
+        sample.gaze_target_px,
+        sample.screen_size_px,
+        R_virtual,
+        gaze_direction_cam=sample.gaze_direction_cam,
     )
     return {
         "sample_id": sample.sample_id,
         "face": face,
         "left_eye": left_eye,
         "right_eye": right_eye,
-        "label": np.array(fraction, dtype=np.float32),
         "R_norm": R_virtual,
+        "label": np.array(fraction, dtype=np.float32),
+        **(
+            {"direction": direction.astype(np.float32)}
+            if direction is not None
+            else {}
+        ),
     }
 
 
@@ -472,6 +480,11 @@ def build_webdataset(
                             **sample.to_manifest_entry(),
                             "label": result["label"].tolist(),
                             "R_norm": result["R_norm"].tolist(),
+                            **(
+                                {"direction": result["direction"].tolist()}
+                                if "direction" in result
+                                else {}
+                            ),
                         },
                         "png": result["face"],
                         "eyes.npy": np.stack([result["left_eye"], result["right_eye"]]),
@@ -545,6 +558,11 @@ def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
         "right_eye": eyes[1],
         "label": np.array(meta["label"], dtype=np.float32),
         "R_norm": np.array(meta["R_norm"], dtype=np.float64),
+        **(
+            {"direction": np.array(meta["direction"], dtype=np.float32)}
+            if "direction" in meta
+            else {}
+        ),
     }
 
 

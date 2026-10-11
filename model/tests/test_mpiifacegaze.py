@@ -16,7 +16,15 @@ _CAM_MATRIX = np.array([[1000.0, 0.0, 640.0], [0.0, 1040.0, 360.0], [0.0, 0.0, 1
 def valid_line(image: str = "day01/0005.jpg", gaze: str = "1148 290") -> str:
     """A 28-column annotation line: path, gaze px, 12 landmarks, 6 pose, 3 fc, 3 gt, eye."""
     return " ".join(
-        [image, gaze, *["0"] * 12, *["0"] * 6, *["0"] * 3, *["0"] * 3, "left"]
+        [
+            image,
+            gaze,
+            *["0"] * 12,
+            *["0"] * 6,
+            *["0", "0", "600"],  # fc: face centre in camera coords
+            *["0", "0", "500"],  # gt: gaze target in camera coords
+            "left",
+        ]
     )
 
 
@@ -51,6 +59,13 @@ def make_subject(
     if lines is not None:
         (subject_dir / f"{name}.txt").write_text("\n".join(lines) + "\n")
     return subject_dir
+
+
+def test_parse_sample_reads_the_camera_frame_direction(tmp_path: Path) -> None:
+    sample = parse_mpii_sample(make_subject(tmp_path, "p00"), valid_line())
+
+    assert sample is not None
+    assert sample.gaze_direction_cam == pytest.approx([0.0, 0.0, -100.0])
 
 
 def test_parse_sample_builds_sample(tmp_path: Path) -> None:
@@ -128,8 +143,8 @@ def make_mini_dataset(root: Path) -> Path:
                 "1148 290",
                 *["0"] * 12,
                 *["0"] * 6,
-                *["0"] * 3,
-                *["0"] * 3,
+                *["0", "0", "600"],  # fc: face centre in camera coords
+                *["0", "0", "500"],  # gt: gaze target in camera coords
                 "left",
             ]
         )

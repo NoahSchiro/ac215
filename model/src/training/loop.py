@@ -64,7 +64,13 @@ def forward_batch(
         )
     else:
         prediction = model(face)
-    return prediction, batch["label"].to(device, non_blocking=True).float()
+    key = "direction" if model.output_mode == "gaze_direction" else "label"
+    if key not in batch:
+        raise ValueError(
+            f"dataset samples lack {key!r}; a cache built before direction"
+            " labels existed must be rebuilt"
+        )
+    return prediction, batch[key].to(device, non_blocking=True).float()
 
 
 def compute_loss(
@@ -218,8 +224,8 @@ def fit(
     """Train for `config.epochs`, returning the best validation stats."""
     model.to(device)
 
-    decay = [p for p in model.parameters() if p.ndim <= 1]
-    no_decay = [p for p in model.parameters() if p.ndim > 1]
+    decay = [p for p in model.parameters() if p.ndim > 1]
+    no_decay = [p for p in model.parameters() if p.ndim <= 1]
     optimizer = torch.optim.AdamW([
         {"params": decay, "weight_decay": config.weight_decay},
         {"params": no_decay, "weight_decay": 0.0},

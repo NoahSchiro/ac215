@@ -21,7 +21,6 @@ from src.training.loop import (
     fit,
     load_checkpoint,
     save_checkpoint,
-    weight_decay_groups,
 )
 from src.training.metrics import (
     angular_error_deg,
@@ -48,6 +47,7 @@ class FakeGaze(Dataset[dict[str, Any]]):
                         "left_eye": rng.integers(0, 255, (36, 60, 3), dtype=np.uint8),
                         "right_eye": rng.integers(0, 255, (36, 60, 3), dtype=np.uint8),
                         "label": np.array([0.4, 0.6], dtype=np.float32),
+                        "direction": np.array([0.0, 0.0, 1.0], dtype=np.float32),
                         "R_norm": np.eye(3),
                     }
                 )
@@ -284,17 +284,39 @@ def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
         assert torch.equal(a, b)
 
 
-def test_weight_decay_groups_exempt_norms_and_biases() -> None:
+def test_fit_decays_kernels_and_exempts_norms_and_biases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The optimizer grouping inside `fit`: 1-D params are weight-decay exempt."""
+    real_adamw = torch.optim.AdamW
+    captured: list[list[dict[str, Any]]] = []
+
+    def spy(params: Any, **kwargs: Any) -> torch.optim.Optimizer:
+        captured.append(params)
+        return real_adamw(params, **kwargs)
+
+    monkeypatch.setattr(torch.optim, "AdamW", spy)
     model = GazeNet(pretrained=False)
-    decay, no_decay = weight_decay_groups(model)
-    decay_ids = {id(p) for p in decay}
-    no_decay_ids = {id(p) for p in no_decay}
+    fit(
+        model,
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=1, batch_size=2, num_workers=0),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+
+    decay, no_decay = captured[0]
     # An exact partition: every parameter lands in exactly one group.
-    assert decay_ids | no_decay_ids == {id(p) for p in model.parameters()}
-    assert not decay_ids & no_decay_ids
+    assert {
+        id(p) for group in captured[0] for p in group["params"]
+    } == {id(p) for p in model.parameters()}
     # Norm scales and biases are 1-D; conv and linear kernels are 2-D+.
-    assert all(p.ndim <= 1 for p in no_decay)
-    assert all(p.ndim >= 2 for p in decay)
+    assert all(p.ndim >= 2 for p in decay["params"])
+    assert decay["weight_decay"] == 1e-4
+    assert all(p.ndim <= 1 for p in no_decay["params"])
+    assert no_decay["weight_decay"] == 0.0
 
 
 def test_checkpoint_refuses_a_mismatched_dropout(tmp_path: Path) -> None:
@@ -381,6 +403,17 @@ def test_evaluate_reports_per_participant_error_and_loss() -> None:
     assert loss > 0.0
 
 
+def test_evaluate_works_in_gaze_direction_mode() -> None:
+    """The mode needs 3-D direction targets from the dataset; this broke once."""
+    stats, loss = evaluate(
+        GazeNet(pretrained=False, output_mode="gaze_direction"),
+        DataLoader(FakeGaze((3,)), batch_size=2),
+        torch.device("cpu"),
+    )
+    assert stats.count == 4
+    assert loss > 0.0
+
+
 def test_fit_logs_val_loss_alongside_train_loss() -> None:
     """Both are mean-per-batch of the same criterion, so they are comparable."""
     import tempfile
@@ -403,6 +436,9 @@ def test_early_stopping_halts_when_val_stops_improving(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Patience counts consecutive epochs with no improvement, then breaks."""
+    # Seeded because `fit` does not: whether val plateaus within 20 epochs
+    # depends on the init, and the unseeded stream is order-dependent.
+    torch.manual_seed(0)
     fit(
         GazeNet(pretrained=False),
         DataLoader(FakeGaze((0,)), batch_size=2),
