@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
-from src.training.logging import ConsoleLogger, WandbLogger
+from src.training.logging import ConsoleLogger, WandbLogger, resolve_run_dir
 from src.training.loop import TrainConfig, evaluate, fit
 from src.training.model import GazeNet
 
@@ -58,11 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
     run = parser.add_argument_group("run")
     run.add_argument(
         "--device",
-         default="auto",
-         choices=["auto", "cpu", "cuda", "mps"],
-         help="auto | cpu | cuda | mps"
+        default="auto",
+        choices=["auto", "cpu", "cuda", "mps"],
+        help="auto | cpu | cuda | mps",
     )
-    run.add_argument("--checkpoint-dir", type=Path, default=Path("checkpoints"))
+    run.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=Path("checkpoints"),
+        help="parent directory; each run gets a <timestamp> subdirectory",
+    )
     run.add_argument("--resume", action="store_true")
     run.add_argument(
         "--wandb",
@@ -82,6 +87,10 @@ def main() -> None:
 
     train_ids = [p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)]
     print(f"train {train_ids}  val [{args.val}]  test [{args.test}]")
+
+    run_dir = resolve_run_dir(args.checkpoint_dir, args.resume)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"run directory: {run_dir}")
 
     def loader(participants: int | list[int], *, shuffle: bool) -> DataLoader[Any]:
         return DataLoader(
@@ -121,7 +130,8 @@ def main() -> None:
 
     logger = (
         WandbLogger(project=args.wandb, config=vars(args))
-        if args.wandb else ConsoleLogger(args.checkpoint_dir / "run.jsonl")
+        if args.wandb
+        else ConsoleLogger(run_dir / "run.jsonl")
     )
     best = fit(
         model,
@@ -129,7 +139,7 @@ def main() -> None:
         loader(args.val, shuffle=False),
         device,
         config,
-        args.checkpoint_dir,
+        run_dir,
         logger,
         resume=args.resume,
     )

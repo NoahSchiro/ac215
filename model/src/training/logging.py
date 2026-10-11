@@ -1,6 +1,7 @@
 """Run logging: terminal output, a persistent copy on disk, and wandb."""
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -51,7 +52,7 @@ class WandbLogger(RunLogger):
                 for key, value in config.items()
             },
             # turns off stats I don't care about
-            settings=wandb.Settings(_disable_stats=True),
+            settings=wandb.Settings(x_disable_stats=True),
         )
 
     def log(self, data: dict[str, Any]) -> None:
@@ -65,3 +66,18 @@ class WandbLogger(RunLogger):
     def finish(self) -> None:
         """Cleanup."""
         self.run.finish()
+
+def resolve_run_dir(parent: Path, resume: bool) -> Path:
+    """Where this run writes: a fresh <timestamp> directory under `parent`.
+
+    Weights (best.pt, last.pt), metrics and the local run log all land flat
+    in that one directory, so successive runs never overwrite each other.
+    With --resume, the newest run under `parent` that still has weights is
+    reused instead, so its checkpoints keep updating in place.
+    """
+    if resume:
+        for run_dir in sorted(parent.glob("*"), reverse=True):
+            if (run_dir / "last.pt").is_file():
+                return run_dir
+        print("no previous run found to resume; starting a new one")
+    return parent / time.strftime("%Y%m%d-%H%M%S")
