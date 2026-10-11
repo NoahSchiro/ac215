@@ -224,10 +224,23 @@ def fit(
         start_epoch, best_error = load_checkpoint(last_path, model, optimizer)
         print(f"resumed from {last_path} at epoch {start_epoch}")
 
-    best_stats: ErrorStats | None = None
-    last_stats: ErrorStats | None = None
+    # Take a baseline before any training
+    stats, val_loss = evaluate(model, val_loader, device, criterion)
+    last_stats = best_stats = stats
     stale = 0
-    for epoch in range(start_epoch, config.epochs):
+    logger.log({
+        "epoch": 0,
+        "val_loss": val_loss,
+        "val_mean": stats.mean,
+        "val_median": stats.median,
+        "val_p95": stats.p95,
+        **{
+            f"val_{subject}": s.mean
+            for subject, s in stats.per_participant.items()
+        },
+    })
+
+    for epoch in range(start_epoch+1, config.epochs+1):
         started = time.monotonic()
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip

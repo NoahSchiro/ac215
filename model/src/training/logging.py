@@ -54,6 +54,9 @@ class WandbLogger(RunLogger):
             # turns off stats I don't care about
             settings=wandb.Settings(x_disable_stats=True),
         )
+        # makes x-axis = epoch
+        self.run.define_metric("epoch", hidden=True)
+        self.run.define_metric("*", step_metric="epoch")
 
     def log(self, data: dict[str, Any]) -> None:
         """Log one data point to the current epoch."""

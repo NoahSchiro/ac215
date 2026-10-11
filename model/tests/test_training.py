@@ -209,6 +209,7 @@ class FakeWandbRun:
     def __init__(self) -> None:
         self.init_kwargs: dict[str, Any] = {}
         self.logged: list[dict[str, Any]] = []
+        self.defined_metrics: list[tuple[str, dict[str, Any]]] = []
         self.steps: list[int | None] = []
         self.summary = FakeWandbSummary()
         self.finished = False
@@ -216,6 +217,9 @@ class FakeWandbRun:
     def record_init(self, **kwargs: Any) -> FakeWandbRun:
         self.init_kwargs = kwargs
         return self
+
+    def define_metric(self, name: str, **kwargs: Any) -> None:
+        self.defined_metrics.append((name, kwargs))
 
     def log(self, data: dict[str, Any], step: int | None = None) -> None:
         self.logged.append(data)
