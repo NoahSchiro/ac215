@@ -299,7 +299,7 @@ def test_fit_runs_checkpoints_and_logs(tmp_path: Path) -> None:
     assert (tmp_path / "best_metrics.json").is_file()
     # The log file is distinct from best_metrics.json, which fit overwrites.
     logged = read_jsonl(tmp_path / "run.jsonl")
-    assert len(logged) == 2
+    assert len(logged) == 3
     assert "val_p02" in logged[0]
 
 
@@ -358,7 +358,7 @@ def test_fit_logs_val_loss_alongside_train_loss() -> None:
             ConsoleLogger(Path(tmp) / "run.jsonl"),
         )
         records = read_jsonl(Path(tmp) / "run.jsonl")
-    assert {"train_loss", "val_loss"} <= set(records[0])
+    assert {"train_loss", "val_loss"} <= set(records[1])
 
 
 def test_early_stopping_halts_when_val_stops_improving(
@@ -389,7 +389,7 @@ def test_patience_none_runs_every_epoch(tmp_path: Path) -> None:
         tmp_path,
         ConsoleLogger(tmp_path / "run.jsonl"),
     )
-    assert len(read_jsonl(tmp_path / "run.jsonl")) == 3
+    assert len(read_jsonl(tmp_path / "run.jsonl")) == 4
 
 
 def test_checkpoint_refuses_a_mismatched_normalization(tmp_path: Path) -> None:
