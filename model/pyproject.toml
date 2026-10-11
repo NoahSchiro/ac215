@@ -15,6 +15,7 @@ dependencies = [
     "torch>=2.14.1",
     "torchvision>=0.29.1",
     "tqdm>=4.70.1",
+    "wandb>=0.30.0",
     "webdataset>=1.0.2",
 ]
 
@@ -48,9 +49,4 @@ ignore_missing_imports = true
 # torchvision ships no py.typed marker
 [[tool.mypy.overrides]]
 module = "torchvision.*"
-ignore_missing_imports = true
-
-# wandb is an optional extra; the import in train.py is lazy and guarded
-[[tool.mypy.overrides]]
-module = "wandb.*"
 ignore_missing_imports = true

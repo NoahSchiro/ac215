@@ -245,22 +245,19 @@ def fit(
             )
         save_checkpoint(last_path, model, optimizer, epoch, best_error, config)
 
-        logger.log(
-            {
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "val_mean": stats.mean,
-                "val_median": stats.median,
-                "val_p95": stats.p95,
-                "improved": improved,
-                "seconds": time.monotonic() - started,
-                **{
-                    f"val_{subject}": s.mean
-                    for subject, s in stats.per_participant.items()
-                },
-            }
-        )
+        logger.log({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "val_mean": stats.mean,
+            "val_median": stats.median,
+            "val_p95": stats.p95,
+            "seconds": time.monotonic() - started,
+            **{
+                f"val_{subject}": s.mean
+                for subject, s in stats.per_participant.items()
+            },
+        })
 
         if config.patience is not None and stale >= config.patience:
             print(

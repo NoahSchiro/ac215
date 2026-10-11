@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
-from src.training.logging import ConsoleLogger
+from src.training.logging import ConsoleLogger, WandbLogger
 from src.training.loop import TrainConfig, evaluate, fit
 from src.training.model import GazeNet
 
@@ -56,10 +56,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run = parser.add_argument_group("run")
-    run.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
+    run.add_argument(
+        "--device",
+         default="auto",
+         choices=["auto", "cpu", "cuda", "mps"],
+         help="auto | cpu | cuda | mps"
+    )
     run.add_argument("--checkpoint-dir", type=Path, default=Path("checkpoints"))
     run.add_argument("--resume", action="store_true")
-    run.add_argument("--wandb", metavar="PROJECT", default=None)
+    run.add_argument(
+        "--wandb",
+        metavar="PROJECT",
+        help="wandb project this run is tracked in",
+    )
     return parser
 
 
@@ -110,13 +119,10 @@ def main() -> None:
         patience=args.patience,
     )
 
-    logger: Any = ConsoleLogger(args.checkpoint_dir / "run.jsonl")
-    if args.wandb is not None:
-        # Imported lazily so wandb stays an optional dependency.
-        import wandb
-
-        logger = wandb.init(project=args.wandb, config=vars(args))
-
+    logger = (
+        WandbLogger(project=args.wandb, config=vars(args))
+        if args.wandb else ConsoleLogger(args.checkpoint_dir / "run.jsonl")
+    )
     best = fit(
         model,
         loader(train_ids, shuffle=True),
@@ -136,6 +142,25 @@ def main() -> None:
     print(
         f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
     )
+
+    logger.summarize({
+        "best_val_mean": best.mean,
+        "best_val_median": best.median,
+        **(
+            {
+                "worst_participant": worst[0],
+                "worst_participant_mean": worst[1].mean,
+            }
+            if worst is not None
+            else {}
+        ),
+        "test_mean": stats.mean,
+        "test_median": stats.median,
+        "test_p95": stats.p95,
+        "test_loss": test_loss,
+        "test_count": stats.count,
+    })
+    logger.finish()
 
 
 if __name__ == "__main__":

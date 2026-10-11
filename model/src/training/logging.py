@@ -1,17 +1,21 @@
-"""Run logging: terminal output plus a persistent copy on disk."""
+"""Run logging: terminal output, a persistent copy on disk, and wandb."""
 
 import json
 from pathlib import Path
 from typing import Any, Protocol
 
+import wandb
+
 
 class RunLogger(Protocol):
-    """Minimal surface a tracker needs. A wandb run satisfies this as-is."""
+    """Minimal surface the training loop needs to report progress."""
 
     def log(self, data: dict[str, Any]) -> None: ...
+    def summarize(self, data: dict[str, Any]) -> None: ...
+    def finish(self) -> None: ...
 
 
-class ConsoleLogger:
+class ConsoleLogger(RunLogger):
     """Prints each record and appends it to a JSON-lines file."""
 
     def __init__(self, path: Path) -> None:
@@ -28,3 +32,36 @@ class ConsoleLogger:
         print(f"epoch {epoch:3d}  {summary}" if epoch is not None else summary)
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(data, sort_keys=True) + "\n")
+
+    def summarize(self, data: dict[str, Any]) -> None:
+        self.log(data)
+
+    def finish(self) -> None: ... # noop for this class
+
+
+class WandbLogger(RunLogger):
+    """Starts a run and streams each record to it, one curve per key."""
+
+    def __init__(self, project: str, config: dict[str, Any]) -> None:
+        self.run = wandb.init(
+            entity="noahschiro-harvard-university",
+            project=project,
+            config={
+                key: str(value) if isinstance(value, Path) else value
+                for key, value in config.items()
+            },
+            # turns off stats I don't care about
+            settings=wandb.Settings(_disable_stats=True),
+        )
+
+    def log(self, data: dict[str, Any]) -> None:
+        """Log one data point to the current epoch."""
+        self.run.log(data, step=data.get("epoch"))
+
+    def summarize(self, data: dict[str, Any]) -> None:
+        """Record final results (best validation, test) on the run summary."""
+        self.run.summary.update(data)
+
+    def finish(self) -> None:
+        """Cleanup."""
+        self.run.finish()
