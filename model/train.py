@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
 from src.training.logging import ConsoleLogger, WandbLogger, resolve_run_dir
-from src.training.loop import TrainConfig, evaluate, fit
+from src.training.loop import TrainConfig, evaluate, fit, load_checkpoint
 from src.training.model import GazeNet
 
 NUM_PARTICIPANTS = 15
@@ -161,6 +161,8 @@ def main() -> None:
     if worst is not None:
         print(f"worst participant: {worst[0]} at {worst[1].mean:.5f}")
 
+    # Recover the best model before running test
+    load_checkpoint(run_dir / "best.pt", model)
     stats, test_loss = evaluate(model, loader(args.test, shuffle=False), device)
     print(
         f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
