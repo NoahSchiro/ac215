@@ -479,6 +479,11 @@ def build_webdataset(
                             **sample.to_manifest_entry(),
                             "label": result["label"].tolist(),
                             "R_norm": result["R_norm"].tolist(),
+                            **(
+                                {"direction": result["direction"].tolist()}
+                                if "direction" in result
+                                else {}
+                            ),
                         },
                         "png": result["face"],
                         "eyes.npy": np.stack(
