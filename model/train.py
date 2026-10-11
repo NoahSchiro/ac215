@@ -44,9 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("--no-pretrained", action="store_true", help="random init")
 
     optim = parser.add_argument_group("optimization")
-    optim.add_argument("--epochs", type=int, default=30)
+    optim.add_argument("--epochs", type=int, default=10)
     optim.add_argument("--lr", type=float, default=1e-4)
-    optim.add_argument("--weight-decay", type=float, default=1e-4)
+    optim.add_argument("--weight-decay", type=float, default=0.01)
     optim.add_argument("--batch-size", type=int, default=256)
     optim.add_argument("--workers", type=int, default=8)
     optim.add_argument("--seed", type=int, default=0)
