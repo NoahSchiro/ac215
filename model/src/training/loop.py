@@ -209,7 +209,6 @@ def fit(
     resume: bool = False,
 ) -> ErrorStats:
     """Train for `config.epochs`, returning the best validation stats."""
-    torch.manual_seed(config.seed)
     model.to(device)
 
     optimizer = torch.optim.AdamW(

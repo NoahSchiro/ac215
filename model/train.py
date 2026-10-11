@@ -7,9 +7,11 @@ eval, because generalizing to an unseen face is what we are measuring.
 """
 
 import argparse
+import random
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -79,6 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.manual_seed(args.seed)
+
     for name, participant in (("--val", args.val), ("--test", args.test)):
         if not 0 <= participant < NUM_PARTICIPANTS:
             raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
