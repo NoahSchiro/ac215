@@ -42,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     model.add_argument("--no-eyes", action="store_true", help="ablate the eye towers")
     model.add_argument("--no-pretrained", action="store_true", help="random init")
+    model.add_argument(
+        "--dropout", type=float, default=0.1, help="head dropout; 0 disables it"
+    )
 
     optim = parser.add_argument_group("optimization")
     optim.add_argument("--epochs", type=int, default=10)
@@ -124,6 +127,7 @@ def main() -> None:
         output_mode=args.output_mode,
         pretrained=not args.no_pretrained,
         use_eyes=not args.no_eyes,
+        dropout=args.dropout,
     )
     print(f"{model.parameter_count() / 1e6:.2f}M parameters on {device}")
 

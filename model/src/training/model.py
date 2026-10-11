@@ -54,6 +54,8 @@ class GazeNet(nn.Module):
         pretrained: ImageNet initialization for the face backbone. With few
             training identities this matters; set False for random init.
         use_eyes: set False to ablate the eye towers and measure their worth.
+        dropout: probability of dropping a unit in the head's hidden layer;
+            0 disables it.
     """
 
     def __init__(
@@ -74,6 +76,9 @@ class GazeNet(nn.Module):
         self.output_mode: OutputMode = output_mode
         self.pretrained = pretrained
         self.use_eyes = use_eyes
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f"dropout must be in [0, 1), got {dropout}")
+        self.dropout = dropout
 
         backbone = torchvision.models.resnet18(
             weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1

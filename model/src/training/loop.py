@@ -160,6 +160,7 @@ def save_checkpoint(
             "optimizer_state": optimizer.state_dict(),
             "output_mode": model.output_mode,
             "use_eyes": model.use_eyes,
+            "dropout": model.dropout,
             # Recorded because it also selects the input normalization, so a
             # mismatch at load time silently degrades predictions.
             "pretrained": model.pretrained,
@@ -192,6 +193,12 @@ def load_checkpoint(
             f"checkpoint has use_eyes={state['use_eyes']},"
             f" model has use_eyes={model.use_eyes}"
         )
+    if "dropout" in state and float(state["dropout"]) != model.dropout:
+        raise ValueError(
+            f"checkpoint was trained with dropout={state['dropout']},"
+            f" model has dropout={model.dropout};"
+            " the training dynamics would not match"
+        )
     model.load_state_dict(state["model_state"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state"])
@@ -211,9 +218,12 @@ def fit(
     """Train for `config.epochs`, returning the best validation stats."""
     model.to(device)
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
-    )
+    decay = [p for p in model.parameters() if p.ndim <= 1]
+    no_decay = [p for p in model.parameters() if p.ndim > 1]
+    optimizer = torch.optim.AdamW([
+        {"params": decay, "weight_decay": config.weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ], lr=config.learning_rate)
     criterion = build_criterion(model)
 
     start_epoch = 0

@@ -21,6 +21,7 @@ from src.training.loop import (
     fit,
     load_checkpoint,
     save_checkpoint,
+    weight_decay_groups,
 )
 from src.training.metrics import (
     angular_error_deg,
@@ -153,6 +154,20 @@ def test_rejects_unknown_output_mode() -> None:
         GazeNet(output_mode="sideways")  # type: ignore[arg-type]
 
 
+def test_rejects_nonsense_dropout() -> None:
+    with pytest.raises(ValueError, match="dropout"):
+        GazeNet(pretrained=False, dropout=1.5)
+
+
+def test_dropout_drops_in_train_and_is_off_in_eval() -> None:
+    model = GazeNet(pretrained=False, dropout=0.5)
+    face, eyes = torch.zeros(2, 3, 224, 224), torch.zeros(2, 3, 36, 60)
+    model.eval()
+    assert torch.equal(model(face, eyes, eyes), model(face, eyes, eyes))
+    model.train()
+    assert not torch.equal(model(face, eyes, eyes), model(face, eyes, eyes))
+
+
 def test_output_mode_is_keyword_only() -> None:
     with pytest.raises(TypeError):
         GazeNet("screen_fraction")  # type: ignore[misc]
@@ -267,6 +282,29 @@ def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
         model.state_dict().values(), restored.state_dict().values(), strict=True
     ):
         assert torch.equal(a, b)
+
+
+def test_weight_decay_groups_exempt_norms_and_biases() -> None:
+    model = GazeNet(pretrained=False)
+    decay, no_decay = weight_decay_groups(model)
+    decay_ids = {id(p) for p in decay}
+    no_decay_ids = {id(p) for p in no_decay}
+    # An exact partition: every parameter lands in exactly one group.
+    assert decay_ids | no_decay_ids == {id(p) for p in model.parameters()}
+    assert not decay_ids & no_decay_ids
+    # Norm scales and biases are 1-D; conv and linear kernels are 2-D+.
+    assert all(p.ndim <= 1 for p in no_decay)
+    assert all(p.ndim >= 2 for p in decay)
+
+
+def test_checkpoint_refuses_a_mismatched_dropout(tmp_path: Path) -> None:
+    path = tmp_path / "last.pt"
+    trained = GazeNet(pretrained=False, dropout=0.5)
+    save_checkpoint(
+        path, trained, torch.optim.AdamW(trained.parameters()), 0, 1.0, TrainConfig()
+    )
+    with pytest.raises(ValueError, match="dropout"):
+        load_checkpoint(path, GazeNet(pretrained=False, dropout=0.1))
 
 
 def test_checkpoint_refuses_a_mismatched_output_mode(tmp_path: Path) -> None:
