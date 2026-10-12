@@ -2,11 +2,12 @@
 .maze {
   display: grid;
 
-  /* Fit the available width or height, whichever is smaller. */
-  width: min(90vw, max(0px, calc(100dvh - 220px)));
+  /* Scale the maze to fit the available space while keeping it square. */
+  width: min(94vw, calc(100dvh - 100px));
+  max-width: 100%;
   aspect-ratio: 1;
 
-  margin: 20px auto;
+  margin: 0 auto;
   position: relative;
 }
 
@@ -42,15 +43,22 @@
   }
 }
 
+/* Cheese goal scales with the size of its maze cell. */
 .maze-cheese {
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
   min-height: 0;
-  font-size: clamp(12px, 3vmin, 32px);
   z-index: 1;
   pointer-events: none;
+}
+
+.maze-cheese img {
+  display: block;
+  width: 75%;
+  height: 75%;
+  object-fit: contain;
 }
 
 .maze {
@@ -78,4 +86,160 @@
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.3),
     0 0 0 8px #383047;
+}
+
+/* Use the available screen height for the maze and navigation button. */
+.maze-screen {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: 20px;
+  padding: 16px;
+}
+
+/* Keep the back button centered below the maze. */
+.maze-screen > button {
+  flex-shrink: 0;
+}
+
+/* Compact victory box positioned beside the maze. */
+.maze-layout {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.maze-layout .maze {
+  flex: 0 1 auto;
+  width: min(94vw, calc(100dvh - 100px));
+  margin: 0;
+}
+
+.maze-layout:has(.maze-win) .maze {
+  width: min(
+    calc(100vw - 300px),
+    calc(100dvh - 100px)
+  );
+}
+
+.maze-win {
+  position: static;
+  flex: 0 0 auto;
+  width: 220px;
+  box-sizing: border-box;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+
+  background: var(--bg);
+  border: 2px solid var(--maze-wall);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  text-align: center;
+}
+
+.maze-win h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.maze-win button {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+@media (max-width: 650px) {
+  .maze-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .maze-layout:has(.maze-win) .maze {
+    width: min(94vw, calc(100dvh - 100px));
+  }
+}
+
+/* Shared arcade-style buttons for the maze screen. */
+.game-button {
+  appearance: none;
+  background: #32864d;
+  color: #ffffff;
+  border: 2px solid #205b35;
+  border-bottom: 5px solid #205b35;
+  border-radius: 10px;
+
+  padding: 10px 20px;
+  min-height: 48px;
+
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Lighter green indicates the button is ready to click. */
+.game-button:hover {
+  background: #4caf68;
+  border-color: #287543;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+/* Give the button a pressed-down effect when clicked. */
+.game-button:active {
+  background: #246b3c;
+  transform: translateY(2px);
+  border-bottom-width: 2px;
+}
+
+/* Make keyboard navigation clearly visible. */
+.game-button:focus-visible {
+  outline: 3px solid #a7e8b8;
+  outline-offset: 4px;
+}
+
+/* Dark mode: slightly brighter green buttons. */
+:root[data-theme='dark'] .game-button {
+  background: #268b48;
+  border-color: #145b2d;
+  color: #ffffff;
+}
+
+:root[data-theme='dark'] .game-button:hover {
+  background: #43bd69;
+  border-color: #27874a;
+}
+
+:root[data-theme='dark'] .game-button:active {
+  background: #1c713a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-button {
+    transition: none;
+  }
+
+  .game-button:hover,
+  .game-button:active {
+    transform: none;
+  }
 }
