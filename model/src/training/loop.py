@@ -1,6 +1,7 @@
 """Train and evaluate loops, with checkpointing and resume."""
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -38,6 +40,7 @@ class TrainConfig:
 
     epochs: int = 30
     learning_rate: float = 1e-4
+    lr_schedule: str = "none"
     weight_decay: float = 1e-4
     batch_size: int = 256
     num_workers: int = 8
@@ -239,12 +242,34 @@ def fit(
         start_epoch, best_error = load_checkpoint(last_path, model, optimizer)
         print(f"resumed from {last_path} at epoch {start_epoch}")
 
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+    if config.lr_schedule == "cosine":
+        t_max = max(config.epochs, 1)
+        scheduler = CosineAnnealingLR(optimizer, T_max=t_max)
+        completed = max(start_epoch - 1, 0)
+        scheduler.base_lrs = [config.learning_rate] * len(optimizer.param_groups)
+        for group in optimizer.param_groups:
+            group["lr"] = config.learning_rate
+        scheduler.last_epoch = completed
+        for group, base in zip(optimizer.param_groups, scheduler.base_lrs):
+            group["lr"] = (
+                scheduler.eta_min
+                + (base - scheduler.eta_min)
+                * (1 + math.cos(math.pi * completed / t_max))
+                / 2
+            )
+    elif config.lr_schedule != "none":
+        raise ValueError(
+            f"lr_schedule must be 'none' or 'cosine', got {config.lr_schedule!r}"
+        )
+
     # Take a baseline before any training
     stats, val_loss = evaluate(model, val_loader, device, criterion)
     last_stats = best_stats = stats
     stale = 0
     logger.log({
         "epoch": 0,
+        "lr": optimizer.param_groups[0]["lr"],
         "val_loss": val_loss,
         "val_mean": stats.mean,
         "val_median": stats.median,
@@ -255,11 +280,14 @@ def fit(
         },
     })
 
-    for epoch in range(start_epoch+1, config.epochs+1):
+    for epoch in range(max(start_epoch, 1), config.epochs+1):
         started = time.monotonic()
+        lr = optimizer.param_groups[0]["lr"]
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip
         )
+        if scheduler is not None:
+            scheduler.step()
         stats, val_loss = evaluate(model, val_loader, device, criterion)
         last_stats = stats
 
@@ -275,6 +303,7 @@ def fit(
 
         logger.log({
             "epoch": epoch,
+            "lr": lr,
             "train_loss": train_loss,
             "val_loss": val_loss,
             "val_mean": stats.mean,

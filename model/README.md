@@ -99,6 +99,10 @@ invocation (`--output-mode`, `--no-pretrained`, `--no-eyes`, `--dropout`);
 `load_checkpoint` fails loudly on a mismatch. `--resume` instead continues a
 run in place and is mutually exclusive with `--weights`.
 
+`--lr-schedule cosine` decays the learning rate toward zero across `--epochs`
+instead of holding it constant (default `none`); the lr used each epoch is
+logged as `lr`.
+
 If you are using the `wandb` logger, then you need to login first:
 
 ```bash

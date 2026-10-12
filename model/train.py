@@ -71,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
     optim = parser.add_argument_group("optimization")
     optim.add_argument("--epochs", type=int, default=10)
     optim.add_argument("--lr", type=float, default=1e-4)
+    optim.add_argument(
+        "--lr-schedule",
+        choices=["cosine", "none"],
+        default="cosine",
+        help="decay the lr over --epochs (cosine) or hold it constant",
+    )
     optim.add_argument("--weight-decay", type=float, default=0.01)
     optim.add_argument("--batch-size", type=int, default=256)
     optim.add_argument("--workers", type=int, default=8)
@@ -177,6 +183,7 @@ def main() -> None:
     config = TrainConfig(
         epochs=args.epochs,
         learning_rate=args.lr,
+        lr_schedule=args.lr_schedule,
         weight_decay=args.weight_decay,
         batch_size=args.batch_size,
         num_workers=args.workers,

@@ -432,6 +432,63 @@ def test_fit_logs_val_loss_alongside_train_loss() -> None:
     assert {"train_loss", "val_loss"} <= set(records[1])
 
 
+def test_lr_schedule_none_keeps_the_lr_constant(tmp_path: Path) -> None:
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=2, batch_size=2, num_workers=0),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    lrs = [record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")]
+    assert lrs == [1e-4, 1e-4, 1e-4]
+
+
+def test_cosine_schedule_decays_the_lr(tmp_path: Path) -> None:
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=3, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    # Baseline at the full lr; epochs 1..3 train at 1.0x, 0.75x, 0.25x.
+    lrs = [record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")]
+    assert lrs == pytest.approx([1e-4, 1e-4, 0.75e-4, 0.25e-4])
+
+
+def test_resume_continues_the_cosine_schedule(tmp_path: Path) -> None:
+    """A resumed epoch trains with the same lr it would have had uninterrupted."""
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=1, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=3, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+        resume=True,
+    )
+    lrs = {
+        record["epoch"]: record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")
+    }
+    assert lrs[2] == pytest.approx(0.75e-4)
+    assert lrs[3] == pytest.approx(0.25e-4)
+
+
 def test_early_stopping_halts_when_val_stops_improving(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
