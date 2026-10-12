@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import webdataset as wds
 from scipy.io import loadmat
 from torch.utils.data import Dataset
 
@@ -27,7 +26,9 @@ from src.data.schema import (
 )
 from src.data.utils import (
     build_webdataset,
+    read_shard_member,
     read_webdataset_sample,
+    shard_lookup,
 )
 
 
@@ -154,22 +155,26 @@ class MPII(Dataset):
             build_webdataset(parse_mpii(Path(dataset_root)), wds_temp_path)
             wds_temp_path.rename(wds_path)
 
-        shards = [str(shard) for shard in sorted(wds_path.glob("*.tar"))]
-        self.samples: list[Sample] = []
-        self.shard_by_key: dict[str, str] = {}
-        for s in wds.WebDataset(shards, shardshuffle=False):
-            meta = json.loads(s["json"])
-            self.samples.append(Sample.from_manifest_entry(meta))
-            self.shard_by_key[meta["sample_id"]] = s["__url__"]
-
         wanted = set(self.participants)
-        self.samples = [s for s in self.samples if s.subject_id in wanted]
+        # sample_id -> shard, loaded from the persisted index (a header scan
+        # on first use). sample_id layout: mpiifacegaze/<subject>/<day>/<frame>
+        lookup = shard_lookup(wds_path)
+        self.keys = [key for key in lookup if key.split("/")[1] in wanted]
+        self.shard_by_key = {key: lookup[key] for key in self.keys}
+
+    @property
+    def samples(self) -> list[Sample]:
+        """Materialized metadata for the selected samples (reads every json)."""
+        return [
+            Sample.from_manifest_entry(
+                json.loads(read_shard_member(self.shard_by_key[key], f"{key}.json"))
+            )
+            for key in self.keys
+        ]
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return len(self.keys)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        sample = self.samples[idx]
-        return read_webdataset_sample(
-            self.shard_by_key[sample.sample_id], sample.sample_id
-        )
+        key = self.keys[idx]
+        return read_webdataset_sample(self.shard_by_key[key], key)

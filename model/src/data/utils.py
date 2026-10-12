@@ -537,6 +537,38 @@ def read_shard_member(shard: str, name: str) -> bytes:
         return f.read(size)
 
 
+def shard_lookup(cache_dir: str | os.PathLike[str]) -> dict[str, str]:
+    """Map every sample_id in a webdataset cache to its shard file.
+
+    Built by a header-only scan of all shards and persisted next to them
+    (``index.json``), so repeated runs -- and the train/val/test Dataset
+    constructions within one run -- skip the scan entirely. Rebuilt
+    automatically whenever any shard file changes.
+    """
+    cache_dir = Path(cache_dir)
+    shards = sorted(cache_dir.glob("*.tar"))
+    fingerprint = [
+        [shard.name, shard.stat().st_size, shard.stat().st_mtime_ns]
+        for shard in shards
+    ]
+    index_path = cache_dir / "index.json"
+    if index_path.is_file():
+        saved = json.loads(index_path.read_text(encoding="utf-8"))
+        if saved["fingerprint"] == fingerprint:
+            return saved["lookup"]
+
+    lookup: dict[str, str] = {}
+    for shard in shards:
+        for name in shard_index(str(shard)):
+            if name.endswith(".json"):
+                lookup[name[: -len(".json")]] = str(shard)
+    index_path.write_text(
+        json.dumps({"fingerprint": fingerprint, "lookup": lookup}),
+        encoding="utf-8",
+    )
+    return lookup
+
+
 def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
     """Read one preprocessed sample from a shard written by `build_webdataset`.
 

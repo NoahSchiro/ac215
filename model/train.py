@@ -1,9 +1,12 @@
 """Train the gaze model.
 
     uv run python train.py --val 13 --test 14 --epochs 30
+    uv run python train.py --dataset gazecapture --epochs 30
 
 Splits are participant-disjoint: a subject never appears in both train and
-eval, because generalizing to an unseen face is what we are measuring.
+eval, because generalizing to an unseen face is what we are measuring. MPII
+splits by participant (--val/--test); GazeCapture has its own official
+subject-disjoint train/val/test splits, which are used as-is.
 """
 
 import argparse
@@ -15,6 +18,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from src.data.gazecapture import GazeCapture
 from src.data.mpiifacegaze import MPII
 from src.training.logging import ConsoleLogger, WandbLogger, resolve_run_dir
 from src.training.loop import TrainConfig, evaluate, fit, load_checkpoint
@@ -27,12 +31,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     data = parser.add_argument_group("data")
     data.add_argument(
+        "--dataset",
+        choices=["mpiifacegaze", "gazecapture"],
+        default="mpiifacegaze",
+        help="dataset to train on",
+    )
+    data.add_argument(
         "--data-root",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze",
+        default=None,
+        help="raw dataset root; defaults to data/<dataset>",
     )
-    data.add_argument("--val", type=int, default=13)
-    data.add_argument("--test", type=int, default=14)
+    data.add_argument(
+        "--val", type=int, default=13, help="MPII validation participant"
+    )
+    data.add_argument(
+        "--test", type=int, default=14, help="MPII test participant"
+    )
 
     model = parser.add_argument_group("model")
     model.add_argument(
@@ -91,22 +106,36 @@ def main() -> None:
     torch.cuda.manual_seed_all(args.seed)
     torch.manual_seed(args.seed)
 
-    for name, participant in (("--val", args.val), ("--test", args.test)):
-        if not 0 <= participant < NUM_PARTICIPANTS:
-            raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
-    if args.val == args.test:
-        raise SystemExit("--val and --test must be different participants")
+    data_dirs = {"mpiifacegaze": "MPIIFaceGaze", "gazecapture": "GazeCapture"}
+    args.data_root = args.data_root or (
+        Path(__file__).resolve().parents[1] / "data" / data_dirs[args.dataset]
+    )
 
-    train_ids = [p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)]
-    print(f"train {train_ids}  val [{args.val}]  test [{args.test}]")
+    splits: dict[str, Any]
+    if args.dataset == "mpiifacegaze":
+        for name, participant in (("--val", args.val), ("--test", args.test)):
+            if not 0 <= participant < NUM_PARTICIPANTS:
+                raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
+        if args.val == args.test:
+            raise SystemExit("--val and --test must be different participants")
+
+        train_ids = [
+            p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)
+        ]
+        splits = {"train": train_ids, "val": args.val, "test": args.test}
+    else:
+        splits = {"train": "train", "val": "val", "test": "test"}
 
     run_dir = resolve_run_dir(args.checkpoint_dir, args.resume)
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"run directory: {run_dir}")
 
-    def loader(participants: int | list[int], *, shuffle: bool) -> DataLoader[Any]:
+    def loader(role: str, *, shuffle: bool) -> DataLoader[Any]:
+        if args.dataset == "mpiifacegaze":
+            dataset: Any = MPII(splits[role], args.data_root)
+        else:
+            dataset = GazeCapture(splits[role], args.data_root)
         return DataLoader(
-            MPII(participants, args.data_root),
+            dataset,
             batch_size=args.batch_size,
             shuffle=shuffle,
             num_workers=args.workers,
@@ -148,8 +177,8 @@ def main() -> None:
     )
     best = fit(
         model,
-        loader(train_ids, shuffle=True),
-        loader(args.val, shuffle=False),
+        loader("train", shuffle=True),
+        loader("val", shuffle=False),
         device,
         config,
         run_dir,
@@ -163,7 +192,7 @@ def main() -> None:
 
     # Recover the best model before running test
     load_checkpoint(run_dir / "best.pt", model)
-    stats, test_loss = evaluate(model, loader(args.test, shuffle=False), device)
+    stats, test_loss = evaluate(model, loader("test", shuffle=False), device)
     print(
         f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
     )

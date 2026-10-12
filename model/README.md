@@ -88,6 +88,10 @@ The crops are cached as a webdataset, so training reads from disk and does not
 run MediaPipe. It uses CUDA, then Apple MPS, then CPU, whichever is available
 first; override with `--device`.
 
+`--dataset gazecapture` trains on GazeCapture instead. MPII splits by participant
+via `--val/--test`; GazeCapture ignores those and uses its own official
+subject-disjoint train/val/test splits.
+
 If you are using the `wandb` logger, then you need to login first:
 
 ```bash
