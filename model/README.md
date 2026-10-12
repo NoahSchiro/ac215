@@ -92,6 +92,13 @@ first; override with `--device`.
 via `--val/--test`; GazeCapture ignores those and uses its own official
 subject-disjoint train/val/test splits.
 
+`--weights PATH` initializes the model from a previous run's checkpoint
+(weights only: fresh optimizer and epoch counter, so it lands in its own new
+run directory). The checkpoint's architecture flags must match the current
+invocation (`--output-mode`, `--no-pretrained`, `--no-eyes`, `--dropout`);
+`load_checkpoint` fails loudly on a mismatch. `--resume` instead continues a
+run in place and is mutually exclusive with `--weights`.
+
 If you are using the `wandb` logger, then you need to login first:
 
 ```bash

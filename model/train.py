@@ -2,6 +2,7 @@
 
     uv run python train.py --val 13 --test 14 --epochs 30
     uv run python train.py --dataset gazecapture --epochs 30
+    uv run python train.py --dataset gazecapture --weights checkpoints/20261011-143012/best.pt
 
 Splits are participant-disjoint: a subject never appears in both train and
 eval, because generalizing to an unseen face is what we are measuring. MPII
@@ -59,6 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("--no-pretrained", action="store_true", help="random init")
     model.add_argument(
         "--dropout", type=float, default=0.1, help="head dropout; 0 disables it"
+    )
+    model.add_argument(
+        "--weights",
+        type=Path,
+        default=None,
+        help="initialize from a previous run's checkpoint (weights only)",
     )
 
     optim = parser.add_argument_group("optimization")
@@ -126,6 +133,9 @@ def main() -> None:
     else:
         splits = {"train": "train", "val": "val", "test": "test"}
 
+    if args.weights is not None and args.resume:
+        raise SystemExit("--weights and --resume are mutually exclusive")
+
     run_dir = resolve_run_dir(args.checkpoint_dir, args.resume)
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -159,6 +169,10 @@ def main() -> None:
         dropout=args.dropout,
     )
     print(f"{model.parameter_count() / 1e6:.2f}M parameters on {device}")
+
+    if args.weights is not None:
+        load_checkpoint(args.weights, model)
+        print(f"initialized weights from {args.weights}")
 
     config = TrainConfig(
         epochs=args.epochs,
