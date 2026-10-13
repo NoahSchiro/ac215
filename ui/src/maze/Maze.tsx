@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from 'react'
 import { generateMaze } from './mazeGenerator'
 import type { MazePosition } from './mazeGenerator'
