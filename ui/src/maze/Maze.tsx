@@ -1,5 +1,7 @@
+
 import { useCallback, useEffect, useState } from 'react'
 import { generateMaze } from './mazeGenerator'
+import type { MazePosition } from './mazeGenerator'
 import './Maze.css'
 
 const ROWS = 15
@@ -15,42 +17,86 @@ const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowRight: 'right',
 }
 
-export default function Maze() {
-  const [maze, setMaze] = useState(() => generateMaze(ROWS, COLS))
+// Randomly select two corners on opposite horizontal sides.
+// Pavlos can start on either the left or right.
+// Both characters can independently start at the top or bottom.
+function randomPositions(): {
+  player: MazePosition
+  cheese: MazePosition
+} {
+  const playerOnLeft = Math.random() < 0.5
+  const playerOnTop = Math.random() < 0.5
+  const cheeseOnTop = Math.random() < 0.5
 
-  const [player, setPlayer] = useState({
-    row: 0,
-    col: 0,
-    rotation: 0,
-    hasMoved: false,
+  const player: MazePosition = {
+    row: playerOnTop ? 0 : ROWS - 1,
+    col: playerOnLeft ? 0 : COLS - 1,
+  }
+
+  const cheese: MazePosition = {
+    row: cheeseOnTop ? 0 : ROWS - 1,
+    col: playerOnLeft ? COLS - 1 : 0,
+  }
+
+  return { player, cheese }
+}
+
+export default function Maze() {
+  // Generate the maze and starting positions together.
+  const [game, setGame] = useState(() => {
+    const positions = randomPositions()
+
+    return {
+      maze: generateMaze(
+        ROWS,
+        COLS,
+        positions.player,
+        positions.cheese,
+      ),
+      cheese: positions.cheese,
+      player: {
+        ...positions.player,
+        rotation: 0,
+        hasMoved: false,
+      },
+    }
   })
+
+  const { maze, cheese, player } = game
 
   const movePlayer = useCallback(
     (direction: Direction) => {
-      setPlayer((current) => {
-        if (current.row === ROWS - 1 && current.col === COLS - 1) {
-          return current
+      setGame((currentGame) => {
+        const current = currentGame.player
+
+        // Stop movement once Pavlos reaches the cheese.
+        if (
+          current.row === currentGame.cheese.row &&
+          current.col === currentGame.cheese.col
+        ) {
+          return currentGame
         }
-        const cell = maze[current.row][current.col]
+
+        const cell = currentGame.maze[current.row][current.col]
         let nextRow = current.row
         let nextCol = current.col
 
         // Check for a wall before moving.
         switch (direction) {
           case 'up':
-            if (cell.walls.top) return current
+            if (cell.walls.top) return currentGame
             nextRow -= 1
             break
           case 'down':
-            if (cell.walls.bottom) return current
+            if (cell.walls.bottom) return currentGame
             nextRow += 1
             break
           case 'left':
-            if (cell.walls.left) return current
+            if (cell.walls.left) return currentGame
             nextCol -= 1
             break
           case 'right':
-            if (cell.walls.right) return current
+            if (cell.walls.right) return currentGame
             nextCol += 1
             break
         }
@@ -62,20 +108,23 @@ export default function Maze() {
           nextCol < 0 ||
           nextCol >= COLS
         ) {
-          return current
+          return currentGame
         }
 
         return {
-          row: nextRow,
-          col: nextCol,
-          rotation:
-            current.rotation +
-            (direction === 'right' || direction === 'down' ? 90 : -90),
-          hasMoved: true,
+          ...currentGame,
+          player: {
+            row: nextRow,
+            col: nextCol,
+            rotation:
+              current.rotation +
+              (direction === 'right' || direction === 'down' ? 90 : -90),
+            hasMoved: true,
+          },
         }
       })
     },
-    [maze],
+    [],
   )
 
   // Move repeatedly while an arrow key is held.
@@ -126,17 +175,30 @@ export default function Maze() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [movePlayer])
-  const hasWon = player.row === ROWS - 1 && player.col === COLS - 1
-  function restartMaze() {
-    setMaze(generateMaze(ROWS, COLS))
 
-    setPlayer({
-      row: 0,
-      col: 0,
-      rotation: 0,
-      hasMoved: false,
+  // Winning depends on the cheese's randomized position.
+  const hasWon = player.row === cheese.row && player.col === cheese.col
+
+  function restartMaze() {
+    const positions = randomPositions()
+
+    // Generate another maze with new starting and ending positions.
+    setGame({
+      maze: generateMaze(
+        ROWS,
+        COLS,
+        positions.player,
+        positions.cheese,
+      ),
+      cheese: positions.cheese,
+      player: {
+        ...positions.player,
+        rotation: 0,
+        hasMoved: false,
+      },
     })
   }
+
   return (
     <>
       {/* Display the generated maze */}
@@ -182,8 +244,8 @@ export default function Maze() {
             role="img"
             aria-label="Cheese goal"
             style={{
-              gridRow: ROWS,
-              gridColumn: COLS,
+              gridRow: cheese.row + 1,
+              gridColumn: cheese.col + 1,
             }}
           >
             🧀
