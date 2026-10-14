@@ -57,9 +57,6 @@ class FakeGaze(Dataset[dict[str, Any]]):
         return self.items[idx]
 
 
-# --- metrics --------------------------------------------------------------
-
-
 def test_screen_fraction_error_is_euclidean() -> None:
     predicted = torch.tensor([[0.0, 0.0], [0.5, 0.5]])
     target = torch.tensor([[3.0, 4.0], [0.5, 0.5]])
@@ -115,9 +112,6 @@ def test_summarize_rejects_empty_input() -> None:
         summarize(torch.tensor([]))
 
 
-# --- model ----------------------------------------------------------------
-
-
 @pytest.mark.parametrize("mode,dim", [("screen_fraction", 2), ("gaze_direction", 3)])
 def test_output_shape_and_range_per_mode(mode: str, dim: int) -> None:
     model = GazeNet(output_mode=mode, pretrained=False)  # type: ignore[arg-type]
@@ -163,9 +157,6 @@ def test_output_mode_is_keyword_only() -> None:
         GazeNet("screen_fraction")  # type: ignore[misc]
 
 
-# --- image prep -----------------------------------------------------------
-
-
 def test_prepare_images_applies_imagenet_statistics() -> None:
     batch = torch.full((2, 36, 60, 3), 255, dtype=torch.uint8)
     out = prepare_images(batch, torch.device("cpu"), imagenet=True)
@@ -186,18 +177,12 @@ def test_prepare_images_rejects_wrong_layout() -> None:
         )
 
 
-# --- logging --------------------------------------------------------------
-
-
 def test_console_logger_appends_json_lines(tmp_path: Path) -> None:
     logger = ConsoleLogger(tmp_path / "run.jsonl")
     logger.log({"epoch": 0, "val_mean": 0.5})
     logger.log({"epoch": 1, "val_mean": 0.4})
     lines = (tmp_path / "run.jsonl").read_text().strip().split("\n")
     assert [json.loads(line)["val_mean"] for line in lines] == [0.5, 0.4]
-
-
-# --- loop -----------------------------------------------------------------
 
 
 def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
