@@ -198,16 +198,6 @@ def load_checkpoint(
     return int(state["epoch"]) + 1, float(state["best_error"])
 
 
-def load_weights(path: Path, model: GazeNet) -> None:
-    """Initialize from a checkpoint's weights only.
-
-    Unlike `load_checkpoint` this keeps no optimizer state, epoch counter or
-    best-error watermark, so fine-tuning on a second dataset starts a fresh
-    run from pretrained weights rather than resuming the old one.
-    """
-    load_checkpoint(path, model, optimizer=None)
-
-
 def fit(
     model: GazeNet,
     train_loader: DataLoader[Any],

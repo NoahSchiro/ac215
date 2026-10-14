@@ -19,7 +19,6 @@ from src.training.loop import (
     evaluate,
     fit,
     load_checkpoint,
-    load_weights,
     save_checkpoint,
 )
 from src.training.metrics import (
@@ -380,19 +379,3 @@ def test_checkpoint_refuses_a_mismatched_eye_configuration(tmp_path: Path) -> No
     )
     with pytest.raises(ValueError, match="use_eyes"):
         load_checkpoint(path, GazeNet(pretrained=False, use_eyes=False))
-
-
-def test_load_weights_takes_weights_without_optimizer_state(tmp_path: Path) -> None:
-    """Fine-tuning starts a fresh run from pretrained weights."""
-    path = tmp_path / "pretrained.pt"
-    source = GazeNet(pretrained=False)
-    save_checkpoint(
-        path, source, torch.optim.AdamW(source.parameters()), 9, 0.1, TrainConfig()
-    )
-
-    target = GazeNet(pretrained=False)
-    load_weights(path, target)
-    for a, b in zip(
-        source.state_dict().values(), target.state_dict().values(), strict=True
-    ):
-        assert torch.equal(a, b)

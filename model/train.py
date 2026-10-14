@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
 from src.training.logging import ConsoleLogger
-from src.training.loop import TrainConfig, evaluate, fit, load_weights
+from src.training.loop import TrainConfig, evaluate, fit
 from src.training.model import GazeNet
 
 NUM_PARTICIPANTS = 15
@@ -59,14 +59,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
     run.add_argument("--checkpoint-dir", type=Path, default=Path("checkpoints"))
     run.add_argument("--resume", action="store_true")
-    run.add_argument(
-        "--init-from",
-        type=Path,
-        default=None,
-        metavar="CHECKPOINT",
-        help="start from these weights with a fresh optimizer,"
-        " e.g. a GazeCapture-pretrained checkpoint",
-    )
     run.add_argument("--wandb", metavar="PROJECT", default=None)
     return parser
 
@@ -107,12 +99,6 @@ def main() -> None:
         use_eyes=not args.no_eyes,
     )
     print(f"{model.parameter_count() / 1e6:.2f}M parameters on {device}")
-
-    if args.init_from is not None:
-        if args.resume:
-            raise SystemExit("--init-from and --resume are mutually exclusive")
-        load_weights(args.init_from, model)
-        print(f"initialized from {args.init_from}")
 
     config = TrainConfig(
         epochs=args.epochs,

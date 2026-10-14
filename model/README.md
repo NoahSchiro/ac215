@@ -56,14 +56,12 @@ Loads the filtered manifest, or builds it from scratch and places it at `data/MP
 
 ```python
 {
-    "sample_id": str,  # "mpiifacegaze/p00/day01/0005"
-    "face": uint8(224, 224, 3),  # normalized face crop (RGB)
-    "left_eye": uint8(36, 60, 3),  # subject's anatomical left eye
-    "right_eye": uint8(36, 60, 3),  # subject's anatomical right eye
-    "label": float32(
-        2,
-    ),  # normalized screen fraction
-    "R_norm": float64(3, 3),  # virtual-camera rotation
+    "sample_id": str,                  # "mpiifacegaze/p00/day01/0005"
+    "face":       uint8 (224, 224, 3), # normalized face crop (RGB)
+    "left_eye":   uint8 (36, 60, 3),   # subject's anatomical left eye
+    "right_eye":  uint8 (36, 60, 3),   # subject's anatomical right eye
+    "label":      float32 (2,),        # normalized screen fraction
+    "R_norm":     float64 (3, 3),      # virtual-camera rotation
 }
 ```
 
