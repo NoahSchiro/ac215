@@ -44,3 +44,143 @@
   font-size: 0.85rem;
   opacity: 0.8;
 }
+
+.home-theme {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.home {
+  --home-bg: #fffdf5;
+  --home-ink: #57416b;
+  --home-muted: #756782;
+  --home-border: #e8dcc6;
+  --home-card: #ffffff;
+  --home-green: #31854b;
+
+  box-sizing: border-box;
+  min-height: 100svh;
+  max-width: none;
+  padding: clamp(40px, 8vh, 90px) 24px;
+  text-align: center;
+  color: var(--home-ink);
+  background:
+    radial-gradient(
+      ellipse at top,
+      rgba(255, 205, 64, 0.14),
+      transparent 65%
+    ),
+    var(--home-bg);
+}
+
+.home h1 {
+  margin: 0 0 16px;
+  color: var(--home-ink);
+  font-size: clamp(52px, 9vw, 100px);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.home-tagline {
+  max-width: 480px;
+  margin: 0 auto;
+  color: var(--home-muted);
+  font-size: clamp(17px, 2vw, 21px);
+  line-height: 1.6;
+}
+
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  max-width: 780px;
+  margin: 48px auto 32px;
+}
+
+.home .home-card {
+  padding: 32px;
+  border: 2px solid var(--home-border);
+  border-radius: 24px;
+  background: var(--home-card);
+  color: var(--home-ink);
+  text-align: center;
+  box-shadow: 0 6px 0 var(--home-border);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.home-card h2,
+.home-card h3 {
+  color: inherit;
+  font-weight: 750;
+}
+
+.home-card p {
+  margin-top: 12px;
+  line-height: 1.6;
+}
+
+/* Make the maze the main action. */
+.home .home-card:first-child {
+  background: var(--home-green);
+  border-color: #256839;
+  color: #ffffff;
+  box-shadow: 0 6px 0 #256839;
+}
+
+.home-card:first-child p {
+  color: #ffffff;
+}
+
+.home .home-card:hover {
+  transform: translateY(-4px);
+}
+
+.home .home-card:active {
+  transform: translateY(4px);
+  box-shadow: none;
+}
+
+.home button:focus-visible {
+  outline: 3px solid var(--home-ink);
+  outline-offset: 6px;
+}
+
+.home > p:not(.home-tagline) {
+  max-width: 620px;
+  margin: 24px auto;
+  color: var(--home-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.home .theme-toggle {
+  margin-top: 24px;
+  padding: 10px 18px;
+  border: 1px solid var(--home-border);
+  border-radius: 999px;
+  background: var(--home-card);
+  color: var(--home-ink);
+}
+
+:root[data-theme='dark'] .home {
+  --home-bg: #242033;
+  --home-ink: #e7daf6;
+  --home-muted: #c1b3cf;
+  --home-border: #51435f;
+  --home-card: #30283e;
+}
+
+@media (max-width: 600px) {
+  .home-actions {
+    grid-template-columns: 1fr;
+    margin-top: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home .home-card {
+    transition: none;
+  }
+}

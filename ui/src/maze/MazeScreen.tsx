@@ -11,7 +11,7 @@ export function MazeScreen({ onBack }: Props) {
 
       <button
         type="button"
-        className="game-button"
+        className="back-button"
         onClick={onBack}
       >
         Back to Home

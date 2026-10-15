@@ -5,10 +5,12 @@ interface Props {
   calibration: CalibrationResult | null
   onStartMaze: () => void
   onStartCalibration: () => void
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
 }
 
 /** Entry screen: choose between the maze and gaze calibration. */
-export function HomeScreen({ calibration, onStartMaze, onStartCalibration }: Props) {
+export function HomeScreen({ calibration, onStartMaze, onStartCalibration, theme, onToggleTheme, }: Props) {
   return (
     <main className="home">
       <h1>Gaze Maze</h1>
@@ -32,6 +34,15 @@ export function HomeScreen({ calibration, onStartMaze, onStartCalibration }: Pro
       <p className="home-note">
         Calibration uses your webcam. Frames stay in this browser tab and are never uploaded.
       </p>
+      <div className="home-theme">
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={onToggleTheme}
+        >
+          Switch to {theme === 'light' ? 'dark' : 'light'} mode
+        </button>
+      </div>
     </main>
   )
 }

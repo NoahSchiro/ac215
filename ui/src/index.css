@@ -105,3 +105,30 @@ button {
   outline: 2px solid var(--text-h);
   outline-offset: 3px;
 }
+
+.back-button {
+  padding: 14px 24px;
+  border: 2px solid #256839;
+  border-radius: 12px;
+  background: #31854b;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #256839;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.back-button:hover {
+  background: #28753f;
+}
+
+.back-button:active {
+  transform: translateY(4px);
+  box-shadow: none;
+}
+
+.back-button:focus-visible {
+  outline: 3px solid #57416b;
+  outline-offset: 4px;
+}
