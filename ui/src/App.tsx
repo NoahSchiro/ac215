@@ -48,18 +48,6 @@ function App() {
 
   return (
     <>
-
-      {view === 'home' && (
-        <button
-          className="theme-toggle"
-          onClick={() =>
-            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
-          }
-        >
-          Switch to {theme === 'light' ? 'dark' : 'light'} mode
-        </button>
-      )}
-
       {view === 'maze' ? (
         <MazeScreen onBack={goHome} />
       ) : (
@@ -67,6 +55,10 @@ function App() {
           calibration={calibration}
           onStartMaze={() => setView('maze')}
           onStartCalibration={startCalibration}
+          theme={theme}
+          onToggleTheme={() =>
+            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+          }
         />
       )}
     </>

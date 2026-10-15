@@ -11,8 +11,13 @@ export function Calibration({ onCancel }: Props) {
     <main className="home">
       <h1>Calibration</h1>
       <p>Calibration is coming soon.</p>
-      <button type="button" onClick={onCancel}>
-        Back to home
+
+      <button
+        type="button"
+        className="back-button"
+        onClick={onCancel}
+      >
+        Back to Home
       </button>
     </main>
   )
