@@ -1,0 +1,25 @@
+# Python virtual environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git metadata
+.git/
+.gitignore
+
+# Local environment files
+.env
+.env.*
+
+# Generated datasets and artifacts
+MPIIFaceGaze/
+MPIIFaceGaze_wd/
+MPIIFaceGaze_wd_temp/
+
+# Test and editor artifacts
+.coverage
+htmlcov/
+.vscode/

@@ -1,0 +1,16 @@
+services:
+  preprocess:
+    build:
+      context: ./model
+      dockerfile: Dockerfile
+
+    volumes:
+      - ./data:/data:ro
+      - ./artifacts:/artifacts
+
+    environment:
+      DATA_ROOT: /data/MPIIFaceGaze
+      OUTPUT_ROOT: /artifacts
+      MAX_SAMPLES: "5"
+
+    command: ["/app/.venv/bin/python", "preprocess.py"]
