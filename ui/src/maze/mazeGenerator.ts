@@ -1,4 +1,3 @@
-
 // Defines the structure of one cell in the maze.
 export interface Cell {
   // Position of the cell within the maze grid.

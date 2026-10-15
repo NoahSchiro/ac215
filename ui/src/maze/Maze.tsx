@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from 'react'
 import { generateMaze } from './mazeGenerator'
 import type { MazePosition } from './mazeGenerator'
@@ -248,7 +247,7 @@ export default function Maze() {
               gridColumn: cheese.col + 1,
             }}
           >
-            🧀
+            <img src="/cheese.svg" alt="" draggable={false} />
           </div>
         )}
 
@@ -281,7 +280,11 @@ export default function Maze() {
       {hasWon && (
         <div className="maze-win">
           <h2>🎉 You found the cheese!</h2>
-          <button type="button" onClick={restartMaze}>
+          <button
+            type="button"
+            className="game-button"
+            onClick={restartMaze}
+          >
             Try Another Maze
           </button>
         </div>

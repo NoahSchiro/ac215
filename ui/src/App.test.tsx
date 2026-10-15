@@ -51,7 +51,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Maze/ }))
     expect(screen.getByRole('group', { name: 'Maze' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Back to home/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Back to Home/i }))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Gaze Maze')
   })
 
