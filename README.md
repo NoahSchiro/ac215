@@ -40,7 +40,7 @@ The Gaze Maze frontend is built with React, TypeScript, and Vite. The UI is cont
 From the project root, run:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d ui
 ```
 
 Open the application in your browser:
@@ -74,13 +74,25 @@ The UI will be available at **http://localhost:8080**.
 
 - `ui/Dockerfile` — Multi-stage Node.js and Nginx build.
 - `ui/.dockerignore` — Excludes local dependencies, build outputs, and environment files.
-- `compose.yaml` — Defines the UI service and exposes port 8080.
+- `docker-compose.yml` — Defines both the UI (`ui`) and model training (`train`) services.
 
-### Integration Notes
+### Integration with Model Training
 
-The current Docker Compose configuration contains the UI service only. The model training container is being developed separately under Issue #40.
+The UI and model training services share a single Docker Compose configuration.
 
-When both branches are merged, the Compose configurations should be combined so that the UI and model services can be managed together.
+To launch the UI:
+
+```bash
+docker compose up --build -d ui
+```
+
+To run the model training pipeline separately:
+
+```bash
+docker compose run --rm train
+```
+
+The UI is available at `http://localhost:8080`. The training service is not started when launching only the UI.
 
 ### Verification
 
