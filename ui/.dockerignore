@@ -1,0 +1,13 @@
+﻿# Local dependencies and build outputs
+node_modules/
+dist/
+coverage/
+
+# Git and editor files
+.git/
+.vscode/
+
+# Environment files and logs
+.env
+.env.*
+*.log

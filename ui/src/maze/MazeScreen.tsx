@@ -7,11 +7,14 @@ interface Props {
 export function MazeScreen({ onBack }: Props) {
   return (
     <main className="maze-screen">
-
       <Maze />
 
-      <button type="button" onClick={onBack}>
-        Back to home
+      <button
+        type="button"
+        className="back-button"
+        onClick={onBack}
+      >
+        Back to Home
       </button>
     </main>
   )

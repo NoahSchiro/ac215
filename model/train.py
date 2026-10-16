@@ -1,8 +1,6 @@
 """Train the gaze model.
 
-    uv run python train.py --val 13 --test 14 --epochs 30
-    uv run python train.py --dataset gazecapture --epochs 30
-    uv run python train.py --dataset gazecapture --weights checkpoints/20261011-143012/best.pt
+    uv run train.py
 
 Splits are participant-disjoint: a subject never appears in both train and
 eval, because generalizing to an unseen face is what we are measuring. MPII

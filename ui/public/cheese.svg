@@ -1,0 +1,24 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Cheese wedge -->
+  <path
+    d="M12 30 L80 12 Q87 10 90 18 L90 74 Q90 80 83 82 L12 90 Z"
+    fill="#FFD54F"
+    stroke="#B87920"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+
+  <!-- Top surface -->
+  <path
+    d="M12 30 L80 12 Q87 10 90 18 L73 38 Z"
+    fill="#FFE889"
+    stroke="#B87920"
+    stroke-width="3"
+    stroke-linejoin="round"
+  />
+
+  <!-- Cheese holes -->
+  <circle cx="42" cy="52" r="9" fill="#E9A52B"/>
+  <circle cx="72" cy="65" r="7" fill="#E9A52B"/>
+  <circle cx="30" cy="76" r="5" fill="#E9A52B"/>
+</svg>

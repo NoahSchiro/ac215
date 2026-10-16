@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Calibration } from './calibration/Calibration'
+import { exitFullscreen } from './calibration/fullscreen'
 import type { CalibrationResult } from './calibration/points'
 import { HomeScreen } from './home/HomeScreen'
 import { MazeScreen } from './maze/MazeScreen'
@@ -29,10 +30,12 @@ function App() {
 
   const finishCalibration = useCallback((result: CalibrationResult) => {
     setCalibration(result)
+    void exitFullscreen()
     setView('home')
   }, [])
 
   const cancelCalibration = useCallback(() => {
+    void exitFullscreen()
     setView('home')
   }, [])
 
@@ -48,18 +51,6 @@ function App() {
 
   return (
     <>
-
-      {view === 'home' && (
-        <button
-          className="theme-toggle"
-          onClick={() =>
-            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
-          }
-        >
-          Switch to {theme === 'light' ? 'dark' : 'light'} mode
-        </button>
-      )}
-
       {view === 'maze' ? (
         <MazeScreen onBack={goHome} />
       ) : (
@@ -67,6 +58,10 @@ function App() {
           calibration={calibration}
           onStartMaze={() => setView('maze')}
           onStartCalibration={startCalibration}
+          theme={theme}
+          onToggleTheme={() =>
+            setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+          }
         />
       )}
     </>
