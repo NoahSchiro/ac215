@@ -319,6 +319,27 @@ def test_fit_decays_kernels_and_exempts_norms_and_biases(
     assert no_decay["weight_decay"] == 0.0
 
 
+def test_fit_runs_with_every_augmentation(tmp_path: Path) -> None:
+    """The augment flags ride through TrainConfig into the training loop."""
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(
+            epochs=1,
+            batch_size=2,
+            num_workers=0,
+            augment_flip=True,
+            augment_crop_jitter=True,
+            augment_photometric=True,
+        ),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    assert len(read_jsonl(tmp_path / "run.jsonl")) > 0
+
+
 def test_checkpoint_refuses_a_mismatched_dropout(tmp_path: Path) -> None:
     path = tmp_path / "last.pt"
     trained = GazeNet(pretrained=False, dropout=0.5)

@@ -68,6 +68,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="initialize from a previous run's checkpoint (weights only)",
     )
 
+    augment = parser.add_argument_group("augmentation")
+    augment.add_argument(
+        "--flip",
+        action="store_true",
+        help="random horizontal flips (eye crops swap; labels transform to match)",
+    )
+    augment.add_argument(
+        "--crop-jitter",
+        action="store_true",
+        help="random rotation/scale/translation of the crops",
+    )
+    augment.add_argument(
+        "--photometric-jitter",
+        action="store_true",
+        help="random brightness/contrast",
+    )
+
     optim = parser.add_argument_group("optimization")
     optim.add_argument("--epochs", type=int, default=10)
     optim.add_argument("--lr", type=float, default=1e-4)
@@ -189,6 +206,9 @@ def main() -> None:
         num_workers=args.workers,
         seed=args.seed,
         patience=args.patience,
+        augment_flip=args.flip,
+        augment_crop_jitter=args.crop_jitter,
+        augment_photometric=args.photometric_jitter,
     )
 
     logger = (

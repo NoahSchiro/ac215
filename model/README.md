@@ -103,6 +103,13 @@ run in place and is mutually exclusive with `--weights`.
 instead of holding it constant (default `none`); the lr used each epoch is
 logged as `lr`.
 
+Augmentation is off by default and runs per batch on the GPU during training
+only (evaluation always sees raw crops): `--flip` mirrors half the samples
+(eye crops swap sides and labels transform to match), `--crop-jitter` adds
++/- 5° rotation, +/- 10% scale and +/- 4% translation to the crops, and
+`--photometric-jitter` adds +/- 20% brightness/contrast. All three are recorded
+in checkpoints.
+
 If you are using the `wandb` logger, then you need to login first:
 
 ```bash

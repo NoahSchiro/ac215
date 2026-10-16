@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.utils import prepare_images
+from src.training.augment import augment_batch
 from src.training.logging import RunLogger
 from src.training.metrics import (
     ErrorStats,
@@ -48,16 +49,34 @@ class TrainConfig:
     grad_clip: float | None = 1.0
     patience: int | None = None
     """Stop after this many epochs with no improvement. None disables it."""
+    augment_flip: bool = False
+    augment_crop_jitter: bool = False
+    augment_photometric: bool = False
+    # Per-batch augmentation switches, applied on device during training
+    # only (see src/training/augment.py); recorded with the checkpoint.
 
 
 def forward_batch(
-    model: GazeNet, batch: dict[str, Any], device: torch.device
+    model: GazeNet,
+    batch: dict[str, Any],
+    device: torch.device,
+    config: TrainConfig | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Move one collated batch to device and run it. Returns (prediction, target).
 
     `batch` is a dict of stacked tensors, not a list of per-sample dicts:
     torch's default collate turns a list of dicts into a dict of batches.
+    `config` enables the training-time augmentations; evaluation passes
+    nothing and always sees the raw crops.
     """
+    if config is not None:
+        batch = augment_batch(
+            batch,
+            device,
+            flip=config.augment_flip,
+            crop_jitter=config.augment_crop_jitter,
+            photometric=config.augment_photometric,
+        )
     face = prepare_images(batch["face"], device, imagenet=model.pretrained)
     if model.use_eyes:
         prediction = model(
@@ -102,18 +121,18 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
-    grad_clip: float | None = None,
+    config: TrainConfig,
 ) -> float:
     """One pass over the training set. Returns mean loss per batch."""
     model.train()
     total = 0.0
     for batch in tqdm(loader, desc="train", leave=False):
         optimizer.zero_grad(set_to_none=True)
-        prediction, target = forward_batch(model, batch, device)
+        prediction, target = forward_batch(model, batch, device, config)
         loss = compute_loss(model, criterion, prediction, target)
         loss.backward()
-        if grad_clip is not None:
-            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        if config.grad_clip is not None:
+            nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
         optimizer.step()
         total += float(loss.item())
     return total / max(len(loader), 1)
@@ -284,7 +303,7 @@ def fit(
         started = time.monotonic()
         lr = optimizer.param_groups[0]["lr"]
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, criterion, device, config.grad_clip
+            model, train_loader, optimizer, criterion, device, config
         )
         if scheduler is not None:
             scheduler.step()
