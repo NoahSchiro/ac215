@@ -1,0 +1,12 @@
+# Build context is uploaded to the Docker daemon before anything runs, so
+# anything large and unnecessary here costs time on every single build.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+checkpoints/
+models/
+.coverage
+htmlcov/
