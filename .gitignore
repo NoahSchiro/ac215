@@ -27,3 +27,9 @@ dist-ssr
 
 # Typst output
 *.pdf
+
+# Generated preprocessing outputs (may contain participant face images)
+artifacts/
+
+# Keep only the readable execution summary as evidence
+evidence/preprocess.log

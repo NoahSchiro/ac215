@@ -1,0 +1,11 @@
+{
+  "description": "Small-sample Docker preprocessing verification",
+  "input_sample_count": 5,
+  "manifest_sha256": "743f2571a9516f3ce3f710351057c8d22276e991f2962fe296fca4ef3c412695",
+  "shards": [
+    {
+      "filename": "shards-w000-000000.tar",
+      "sha256": "6094cfcc07c59e9ee1f4d42f20a7348a3895acc66c2ddd9da60821ea9cda0b65"
+    }
+  ]
+}

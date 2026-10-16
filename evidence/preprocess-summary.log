@@ -1,0 +1,10 @@
+﻿preprocess-1  | Selected 5 input samples
+preprocess-1  | Manifest SHA256: 743f2571a9516f3ce3f710351057c8d22276e991f2962fe296fca4ef3c412695
+preprocess-1  | wrote 5/5 samples to /artifacts/shards (0 dropped)
+preprocess-1  | Created /artifacts/index.json
+preprocess-1  | Small-sample preprocessing completed.
+preprocess-1  | Selected 5 input samples
+preprocess-1  | Manifest SHA256: 743f2571a9516f3ce3f710351057c8d22276e991f2962fe296fca4ef3c412695
+preprocess-1  | wrote 5/5 samples to /artifacts/shards (0 dropped)
+preprocess-1  | Created /artifacts/index.json
+preprocess-1  | Small-sample preprocessing completed.
