@@ -1,0 +1,132 @@
+[
+  {
+    "sample_id": "mpiifacegaze/p00/day01/0005",
+    "source_dataset": "mpiifacegaze",
+    "subject_id": "p00",
+    "camera_intrinsics": {
+      "focal_length_px": 996.4508970994009,
+      "principal_point": [
+        624.663440953582,
+        364.08742556922607
+      ],
+      "is_estimate": false
+    },
+    "screen_size_px": [
+      1280,
+      800
+    ],
+    "screen_size_mm": [
+      286.4708,
+      179.0442
+    ],
+    "gaze_target_px": [
+      476.0,
+      758.0
+    ],
+    "device_type": "laptop"
+  },
+  {
+    "sample_id": "mpiifacegaze/p00/day01/0030",
+    "source_dataset": "mpiifacegaze",
+    "subject_id": "p00",
+    "camera_intrinsics": {
+      "focal_length_px": 996.4508970994009,
+      "principal_point": [
+        624.663440953582,
+        364.08742556922607
+      ],
+      "is_estimate": false
+    },
+    "screen_size_px": [
+      1280,
+      800
+    ],
+    "screen_size_mm": [
+      286.4708,
+      179.0442
+    ],
+    "gaze_target_px": [
+      1078.0,
+      693.0
+    ],
+    "device_type": "laptop"
+  },
+  {
+    "sample_id": "mpiifacegaze/p00/day01/0031",
+    "source_dataset": "mpiifacegaze",
+    "subject_id": "p00",
+    "camera_intrinsics": {
+      "focal_length_px": 996.4508970994009,
+      "principal_point": [
+        624.663440953582,
+        364.08742556922607
+      ],
+      "is_estimate": false
+    },
+    "screen_size_px": [
+      1280,
+      800
+    ],
+    "screen_size_mm": [
+      286.4708,
+      179.0442
+    ],
+    "gaze_target_px": [
+      126.0,
+      598.0
+    ],
+    "device_type": "laptop"
+  },
+  {
+    "sample_id": "mpiifacegaze/p00/day01/0038",
+    "source_dataset": "mpiifacegaze",
+    "subject_id": "p00",
+    "camera_intrinsics": {
+      "focal_length_px": 996.4508970994009,
+      "principal_point": [
+        624.663440953582,
+        364.08742556922607
+      ],
+      "is_estimate": false
+    },
+    "screen_size_px": [
+      1280,
+      800
+    ],
+    "screen_size_mm": [
+      286.4708,
+      179.0442
+    ],
+    "gaze_target_px": [
+      211.0,
+      69.0
+    ],
+    "device_type": "laptop"
+  },
+  {
+    "sample_id": "mpiifacegaze/p00/day01/0063",
+    "source_dataset": "mpiifacegaze",
+    "subject_id": "p00",
+    "camera_intrinsics": {
+      "focal_length_px": 996.4508970994009,
+      "principal_point": [
+        624.663440953582,
+        364.08742556922607
+      ],
+      "is_estimate": false
+    },
+    "screen_size_px": [
+      1280,
+      800
+    ],
+    "screen_size_mm": [
+      286.4708,
+      179.0442
+    ],
+    "gaze_target_px": [
+      878.0,
+      752.0
+    ],
+    "device_type": "laptop"
+  }
+]

@@ -92,8 +92,13 @@ The `evidence/` directory contains:
 
 - `preprocess-summary.log`: Successful preprocessing execution logs.
 - `sample-output.json`: Sample count, manifest SHA256, and output shard SHA256.
+- `sample-input.json`: Metadata for the five MPIIFaceGaze
+  samples used in the Docker preprocessing demonstration. Includes
+  camera parameters, screen dimensions, and gaze coordinates, but
+  excludes participant face images.
 
 The five-sample demonstration successfully processed 5/5 samples with zero dropped samples and exited with code 0.
+
 
 ### Limitations
 
