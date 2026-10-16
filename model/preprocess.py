@@ -9,7 +9,6 @@ from src.data.mpiifacegaze import parse_mpii_sample
 from src.data.schema import write_manifest
 from src.data.utils import build_webdataset
 
-
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data/MPIIFaceGaze"))
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", "/artifacts"))
 MAX_SAMPLES = int(os.environ.get("MAX_SAMPLES", "5"))
