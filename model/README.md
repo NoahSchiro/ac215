@@ -67,14 +67,63 @@ Loads the filtered manifest, or builds it from scratch and places it at `data/MP
 
 ### Running it
 
-`main.py` builds the filtered manifest or loads it if it is already built
-
-```bash
-uv run python main.py
-```
+The cache is built on first use, so the first run is slow and later ones are
+not. `train.py` is the only entry point.
 
 ### Notes
 
-- Nothing but the manifest is written to disk; crops and labels are recomputed per `__getitem__`. At our current scale, this is okay, but if we start getting up to millions of samples, a significant fraction of our compute time will be re-running preprocessing steps for each epoch. So might be worth it to cache.
+- Crops and labels are computed once into webdataset shards, so `__getitem__` is a shard read plus a PNG decode rather than a MediaPipe pass. The shards are ~2.9GB for MPIIFaceGaze.
 - Filtering thresholds live as constants in `filter_dataset`; the virtual-camera parameters are constants in `normalize_face`. Both must stay identical across datasets and match the TypeScript port of steps 2 and 4 planned for browser inference.
 - Adding a second dataset should be simple write a new parser to `Sample`, pass those samples through `filter_dataset()` and wrap it up in a torch Dataset.
+
+## Training
+
+### Running it
+
+```bash
+uv run train.py --val 13 --test 14 --epochs 30
+```
+
+The crops are cached as a webdataset, so training reads from disk and does not
+run MediaPipe. It uses CUDA, then Apple MPS, then CPU, whichever is available
+first; override with `--device`.
+
+### Running it in a container
+
+MediaPipe's FaceLandmarker aborts on some macOS setups inside Metal (observed
+on an M-series Mac with both the CPU and GPU delegate), which blocks *building*
+the cache. A Linux container has no Metal and falls back to XNNPACK:
+
+```bash
+docker compose run --rm train                      # defaults from docker-compose.yml
+docker compose run --rm train --epochs 1 --val 5   # arguments override
+```
+
+Note Docker Desktop on macOS does not pass through the GPU, so a containerized
+run is CPU-only. Build the cache in the container, then train natively to use
+MPS.
+
+`--shm-size=2g` is required when running `docker run` directly. PyTorch's
+DataLoader passes tensors between workers through `/dev/shm`, which Docker
+defaults to 64MB; a batch of 224x224 images overruns it and fails with
+`No space left on device`, which looks like a full disk but is not. Compose
+sets this via `shm_size`.
+
+### Layout
+
+| Module | Role |
+|---|---|
+| `src/training/model.py` | `GazeNet`: a ResNet-18 face tower plus one eye tower shared across both eyes, with the left crop flipped into the right's orientation. `--no-pretrained` switches to random init; `--no-eyes` ablates the eye towers. |
+| `src/training/metrics.py` | Mean, median and p95, plus a per-participant breakdown, with converters to cm and degrees for comparison against published figures. |
+| `src/training/loop.py` | Train and eval loops, per-epoch and best checkpointing, resume. |
+| `src/training/logging.py` | `RunLogger` protocol and a console logger that prints and appends JSON lines to `checkpoints/run.jsonl`. A wandb run satisfies the same protocol; pass `--wandb PROJECT`. |
+
+`--output-mode` selects the head. We train on `screen_fraction` today;
+`gaze_direction` is wired up for the normalized-space formulation if we move
+to it.
+
+### Data versioning
+
+`write_manifest` emits byte-identical JSON for identical input, so
+`sha256 data/MPIIFaceGaze/mpii_filtered.json` is a dataset snapshot ID. Record
+it alongside any reported result.
