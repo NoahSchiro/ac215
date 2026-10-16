@@ -88,6 +88,13 @@ The crops are cached as a webdataset, so training reads from disk and does not
 run MediaPipe. It uses CUDA, then Apple MPS, then CPU, whichever is available
 first; override with `--device`.
 
+If you are using the `wandb` logger, then you need to login first:
+
+```bash
+uv run wandb login
+uv run train.py --wandb gaze # project name is gaze
+```
+
 ### Running it in a container
 
 MediaPipe's FaceLandmarker aborts on some macOS setups inside Metal (observed
@@ -116,7 +123,7 @@ sets this via `shm_size`.
 | `src/training/model.py` | `GazeNet`: a ResNet-18 face tower plus one eye tower shared across both eyes, with the left crop flipped into the right's orientation. `--no-pretrained` switches to random init; `--no-eyes` ablates the eye towers. |
 | `src/training/metrics.py` | Mean, median and p95, plus a per-participant breakdown, with converters to cm and degrees for comparison against published figures. |
 | `src/training/loop.py` | Train and eval loops, per-epoch and best checkpointing, resume. |
-| `src/training/logging.py` | `RunLogger` protocol and a console logger that prints and appends JSON lines to `checkpoints/run.jsonl`. A wandb run satisfies the same protocol; pass `--wandb PROJECT`. |
+| `src/training/logging.py` | `ConsoleLogger` (json logger), and a `WandbLogger` (logs to wandb) |
 
 `--output-mode` selects the head. We train on `screen_fraction` today;
 `gaze_direction` is wired up for the normalized-space formulation if we move

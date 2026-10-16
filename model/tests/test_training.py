@@ -10,10 +10,11 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
+import wandb
 from torch.utils.data import DataLoader, Dataset
 
 from src.data.utils import prepare_images
-from src.training.logging import ConsoleLogger
+from src.training.logging import ConsoleLogger, WandbLogger
 from src.training.loop import (
     TrainConfig,
     evaluate,
@@ -177,12 +178,81 @@ def test_prepare_images_rejects_wrong_layout() -> None:
         )
 
 
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Parse a ConsoleLogger JSON-lines file back into records."""
+    return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+
 def test_console_logger_appends_json_lines(tmp_path: Path) -> None:
     logger = ConsoleLogger(tmp_path / "run.jsonl")
     logger.log({"epoch": 0, "val_mean": 0.5})
     logger.log({"epoch": 1, "val_mean": 0.4})
-    lines = (tmp_path / "run.jsonl").read_text().strip().split("\n")
-    assert [json.loads(line)["val_mean"] for line in lines] == [0.5, 0.4]
+    assert [record["val_mean"] for record in read_jsonl(tmp_path / "run.jsonl")] == [
+        0.5,
+        0.4,
+    ]
+
+
+class FakeWandbSummary:
+    """Mirrors wandb.Run.summary: an attribute with an update method."""
+
+    def __init__(self) -> None:
+        self.updates: list[dict[str, Any]] = []
+
+    def update(self, data: dict[str, Any]) -> None:
+        self.updates.append(data)
+
+
+class FakeWandbRun:
+    """Records what WandbLogger does, standing in for wandb.Run."""
+
+    def __init__(self) -> None:
+        self.init_kwargs: dict[str, Any] = {}
+        self.logged: list[dict[str, Any]] = []
+        self.defined_metrics: list[tuple[str, dict[str, Any]]] = []
+        self.steps: list[int | None] = []
+        self.summary = FakeWandbSummary()
+        self.finished = False
+
+    def record_init(self, **kwargs: Any) -> FakeWandbRun:
+        self.init_kwargs = kwargs
+        return self
+
+    def define_metric(self, name: str, **kwargs: Any) -> None:
+        self.defined_metrics.append((name, kwargs))
+
+    def log(self, data: dict[str, Any], step: int | None = None) -> None:
+        self.logged.append(data)
+        self.steps.append(step)
+
+    def finish(self) -> None:
+        self.finished = True
+
+
+def test_wandb_logger_tracks_config_pins_step_and_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeWandbRun()
+    monkeypatch.setattr(wandb, "init", fake.record_init)
+
+    logger = WandbLogger(
+        "gaze", {"epochs": 2, "checkpoint_dir": Path("checkpoints/run")}
+    )
+    logger.log({"epoch": 0, "train_loss": 1.0})
+    logger.log({"epoch": 1, "train_loss": 0.5})
+    logger.summarize({"test_mean": 0.1})
+    logger.finish()
+
+    assert fake.init_kwargs["project"] == "gaze"
+    # Paths are coerced so the config always serializes.
+    assert fake.init_kwargs["config"] == {
+        "epochs": 2,
+        "checkpoint_dir": "checkpoints/run",
+    }
+    # Steps are pinned to the epoch, so a resumed run continues its curves.
+    assert fake.steps == [0, 1]
+    assert fake.summary.updates == [{"test_mean": 0.1}]
+    assert fake.finished
 
 
 def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
@@ -212,11 +282,6 @@ def test_checkpoint_refuses_a_mismatched_output_mode(tmp_path: Path) -> None:
 def test_fit_runs_checkpoints_and_logs(tmp_path: Path) -> None:
     train_loader = DataLoader(FakeGaze((0, 1)), batch_size=2)
     val_loader = DataLoader(FakeGaze((2,)), batch_size=2)
-    logged: list[dict[str, Any]] = []
-
-    class Recorder:
-        def log(self, data: dict[str, Any]) -> None:
-            logged.append(data)
 
     best = fit(
         GazeNet(pretrained=False),
@@ -225,14 +290,16 @@ def test_fit_runs_checkpoints_and_logs(tmp_path: Path) -> None:
         torch.device("cpu"),
         TrainConfig(epochs=2, batch_size=2, num_workers=0),
         tmp_path,
-        Recorder(),
+        ConsoleLogger(tmp_path / "run.jsonl"),
     )
 
     assert best.count == 4
     assert (tmp_path / "last.pt").is_file()
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "best_metrics.json").is_file()
-    assert len(logged) == 2
+    # The log file is distinct from best_metrics.json, which fit overwrites.
+    logged = read_jsonl(tmp_path / "run.jsonl")
+    assert len(logged) == 3
     assert "val_p02" in logged[0]
 
 
@@ -242,9 +309,6 @@ def test_fit_resumes_from_the_last_checkpoint(
     train_loader = DataLoader(FakeGaze((0,)), batch_size=2)
     val_loader = DataLoader(FakeGaze((1,)), batch_size=2)
 
-    class Null:
-        def log(self, data: dict[str, Any]) -> None: ...
-
     args = (torch.device("cpu"),)
     fit(
         GazeNet(pretrained=False),
@@ -253,7 +317,7 @@ def test_fit_resumes_from_the_last_checkpoint(
         *args,
         TrainConfig(epochs=1, batch_size=2, num_workers=0),
         tmp_path,
-        Null(),
+        ConsoleLogger(tmp_path / "run.jsonl"),
     )
     fit(
         GazeNet(pretrained=False),
@@ -262,7 +326,7 @@ def test_fit_resumes_from_the_last_checkpoint(
         *args,
         TrainConfig(epochs=2, batch_size=2, num_workers=0),
         tmp_path,
-        Null(),
+        ConsoleLogger(tmp_path / "run2.jsonl"),
         resume=True,
     )
     assert "resumed from" in capsys.readouterr().out
@@ -281,12 +345,6 @@ def test_evaluate_reports_per_participant_error_and_loss() -> None:
 
 def test_fit_logs_val_loss_alongside_train_loss() -> None:
     """Both are mean-per-batch of the same criterion, so they are comparable."""
-    records: list[dict[str, Any]] = []
-
-    class Recorder:
-        def log(self, data: dict[str, Any]) -> None:
-            records.append(data)
-
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -297,21 +355,16 @@ def test_fit_logs_val_loss_alongside_train_loss() -> None:
             torch.device("cpu"),
             TrainConfig(epochs=1, batch_size=2, num_workers=0),
             Path(tmp),
-            Recorder(),
+            ConsoleLogger(Path(tmp) / "run.jsonl"),
         )
-    assert {"train_loss", "val_loss"} <= set(records[0])
+        records = read_jsonl(Path(tmp) / "run.jsonl")
+    assert {"train_loss", "val_loss"} <= set(records[1])
 
 
 def test_early_stopping_halts_when_val_stops_improving(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Patience counts consecutive epochs with no improvement, then breaks."""
-    records: list[dict[str, Any]] = []
-
-    class Recorder:
-        def log(self, data: dict[str, Any]) -> None:
-            records.append(data)
-
     fit(
         GazeNet(pretrained=False),
         DataLoader(FakeGaze((0,)), batch_size=2),
@@ -319,20 +372,14 @@ def test_early_stopping_halts_when_val_stops_improving(
         torch.device("cpu"),
         TrainConfig(epochs=20, batch_size=2, num_workers=0, patience=1),
         tmp_path,
-        Recorder(),
+        ConsoleLogger(tmp_path / "run.jsonl"),
     )
     # Far fewer than 20 epochs ran, and the reason was printed.
-    assert len(records) < 20
+    assert len(read_jsonl(tmp_path / "run.jsonl")) < 20
     assert "stopping early" in capsys.readouterr().out
 
 
 def test_patience_none_runs_every_epoch(tmp_path: Path) -> None:
-    records: list[dict[str, Any]] = []
-
-    class Recorder:
-        def log(self, data: dict[str, Any]) -> None:
-            records.append(data)
-
     fit(
         GazeNet(pretrained=False),
         DataLoader(FakeGaze((0,)), batch_size=2),
@@ -340,9 +387,9 @@ def test_patience_none_runs_every_epoch(tmp_path: Path) -> None:
         torch.device("cpu"),
         TrainConfig(epochs=3, batch_size=2, num_workers=0, patience=None),
         tmp_path,
-        Recorder(),
+        ConsoleLogger(tmp_path / "run.jsonl"),
     )
-    assert len(records) == 3
+    assert len(read_jsonl(tmp_path / "run.jsonl")) == 4
 
 
 def test_checkpoint_refuses_a_mismatched_normalization(tmp_path: Path) -> None:
