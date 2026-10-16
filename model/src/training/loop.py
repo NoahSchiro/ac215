@@ -172,7 +172,7 @@ def save_checkpoint(
 def load_checkpoint(
     path: Path, model: GazeNet, optimizer: torch.optim.Optimizer | None = None
 ) -> tuple[int, float]:
-    """Restore weights (and optimizer, if given). Returns (next_epoch, best)."""
+    """Restore weights (and optimizer, if given). Returns (last_epoch, best)."""
     state = torch.load(path, map_location="cpu", weights_only=False)
     if state["output_mode"] != model.output_mode:
         raise ValueError(
@@ -195,7 +195,7 @@ def load_checkpoint(
     model.load_state_dict(state["model_state"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state"])
-    return int(state["epoch"]) + 1, float(state["best_error"])
+    return int(state["epoch"]), float(state["best_error"])
 
 
 def fit(
