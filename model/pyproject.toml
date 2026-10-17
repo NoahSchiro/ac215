@@ -35,6 +35,18 @@ strict = true
 [tool.uv]
 override-dependencies = ["opencv-contrib-python; sys_platform == 'never'"]
 
+# Torch from PyPI bundles CUDA runtime libraries -- 3.3GB of nvidia/ plus
+# 815MB of triton. Nothing uses them: the container trains on CPU (Docker
+# Desktop does not pass through a GPU) and GPU training runs natively.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
 # Mediapipe package does some weird stuff that requires this
 [[tool.mypy.overrides]]
 module = "mediapipe.*"

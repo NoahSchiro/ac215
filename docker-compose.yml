@@ -1,6 +1,11 @@
-# Model pipeline, runnable with a single command:
+# Full pipeline, runnable with a single command:
 #
-#     docker compose run --rm train
+#     docker compose up
+#
+# `ui` waits for `train` to finish, so one command runs preprocessing and
+# training and then serves the result. For UI work that should not retrain:
+#
+#     docker compose up ui --no-deps
 
 services:
   train:
@@ -22,13 +27,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
 
-    # Overridable: `docker compose run --rm train --epochs 1 --val 5`
+    # One epoch so `docker compose up` completes: the container has no GPU
+    # (Docker Desktop does not pass one through) and a CPU epoch takes hours.
+    # Real runs override: `docker compose run --rm train --epochs 30`
     command:
       - --data-root=/data/MPIIFaceGaze
       - --val=13
       - --test=14
-      - --epochs=30
-      - --workers=8
+      - --epochs=1
+      - --workers=2
       - --device=cpu
 
   ui:
@@ -39,3 +46,9 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+
+    # Makes the two services a pipeline rather than two unrelated containers:
+    # the UI only comes up once training has exited successfully.
+    depends_on:
+      train:
+        condition: service_completed_successfully
