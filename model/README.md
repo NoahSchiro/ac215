@@ -101,7 +101,8 @@ docker compose run --rm train --epochs 1 --val 5   # arguments override
 
 Note Docker Desktop on macOS does not pass through the GPU, so a containerized
 run is CPU-only. Build the cache in the container, then train natively to use
-MPS.
+MPS. Because nothing in the container uses CUDA, torch is installed from the
+CPU-only index, which takes the image from 9.9GB to 2.2GB.
 
 `--shm-size=2g` is required when running `docker run` directly. PyTorch's
 DataLoader passes tensors between workers through `/dev/shm`, which Docker
