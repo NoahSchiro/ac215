@@ -172,7 +172,7 @@ def save_checkpoint(
 def load_checkpoint(
     path: Path, model: GazeNet, optimizer: torch.optim.Optimizer | None = None
 ) -> tuple[int, float]:
-    """Restore weights (and optimizer, if given). Returns (next_epoch, best)."""
+    """Restore weights (and optimizer, if given). Returns (last_epoch, best)."""
     state = torch.load(path, map_location="cpu", weights_only=False)
     if state["output_mode"] != model.output_mode:
         raise ValueError(
@@ -195,7 +195,7 @@ def load_checkpoint(
     model.load_state_dict(state["model_state"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state"])
-    return int(state["epoch"]) + 1, float(state["best_error"])
+    return int(state["epoch"]), float(state["best_error"])
 
 
 def fit(
@@ -223,10 +223,23 @@ def fit(
         start_epoch, best_error = load_checkpoint(last_path, model, optimizer)
         print(f"resumed from {last_path} at epoch {start_epoch}")
 
-    best_stats: ErrorStats | None = None
-    last_stats: ErrorStats | None = None
+    # Take a baseline before any training
+    stats, val_loss = evaluate(model, val_loader, device, criterion)
+    last_stats = best_stats = stats
     stale = 0
-    for epoch in range(start_epoch, config.epochs):
+    logger.log({
+        "epoch": 0,
+        "val_loss": val_loss,
+        "val_mean": stats.mean,
+        "val_median": stats.median,
+        "val_p95": stats.p95,
+        **{
+            f"val_{subject}": s.mean
+            for subject, s in stats.per_participant.items()
+        },
+    })
+
+    for epoch in range(start_epoch+1, config.epochs+1):
         started = time.monotonic()
         train_loss = train_one_epoch(
             model, train_loader, optimizer, criterion, device, config.grad_clip
@@ -244,22 +257,19 @@ def fit(
             )
         save_checkpoint(last_path, model, optimizer, epoch, best_error, config)
 
-        logger.log(
-            {
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "val_mean": stats.mean,
-                "val_median": stats.median,
-                "val_p95": stats.p95,
-                "improved": improved,
-                "seconds": time.monotonic() - started,
-                **{
-                    f"val_{subject}": s.mean
-                    for subject, s in stats.per_participant.items()
-                },
-            }
-        )
+        logger.log({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "val_mean": stats.mean,
+            "val_median": stats.median,
+            "val_p95": stats.p95,
+            "seconds": time.monotonic() - started,
+            **{
+                f"val_{subject}": s.mean
+                for subject, s in stats.per_participant.items()
+            },
+        })
 
         if config.patience is not None and stale >= config.patience:
             print(
