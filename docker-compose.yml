@@ -30,3 +30,12 @@ services:
       - --epochs=30
       - --workers=8
       - --device=cpu
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    image: ac215-ui:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
