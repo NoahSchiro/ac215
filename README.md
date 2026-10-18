@@ -18,7 +18,7 @@ Training and backend deployment (API wrapper, containerization, `kube.yaml`)
 
 `./model/data/` (.gitignored)
 
-While I would include the data here through `git lfs`, 
+While I would include the data here through `git lfs`,
 
 - The GazeCapture dataset comes with a license which does not allow for redistribution. It comes as a `tar` full of `tar.gz` so to unpack:
   - Move the `tar` to `./data/`
@@ -31,4 +31,71 @@ While I would include the data here through `git lfs`,
 
 `./ui/`
 
-Front end web ui
+The Gaze Maze frontend is built with React, TypeScript, and Vite. The UI is containerized using a multi-stage Docker build: Node.js builds the application, and Nginx serves the compiled files.
+
+### Running the UI with Docker Compose
+
+**Prerequisite:** Docker Desktop must be installed and running.
+
+From the project root, run:
+
+```bash
+docker compose up --build -d ui
+```
+
+Open the application in your browser:
+
+**http://localhost:8080**
+
+To verify that the container is running:
+
+```bash
+docker compose ps
+```
+
+To stop the UI:
+
+```bash
+docker compose down
+```
+
+### Building the UI Container Directly
+
+Alternatively, build and run the UI without Docker Compose:
+
+```bash
+docker build -t ac215-ui ./ui
+docker run --rm -p 8080:80 ac215-ui
+```
+
+The UI will be available at **http://localhost:8080**.
+
+### Container Configuration
+
+- `ui/Dockerfile` — Multi-stage Node.js and Nginx build.
+- `ui/.dockerignore` — Excludes local dependencies, build outputs, and environment files.
+- `docker-compose.yml` — Defines both the UI (`ui`) and model training (`train`) services.
+
+### Integration with Model Training
+
+The UI and model training services share a single Docker Compose configuration.
+
+To launch the UI:
+
+```bash
+docker compose up --build -d ui
+```
+
+To run the model training pipeline separately:
+
+```bash
+docker compose run --rm train
+```
+
+The UI is available at `http://localhost:8080`. The training service is not started when launching only the UI.
+
+### Verification
+
+The UI container was successfully built and launched using Docker Compose. The Gaze Maze homepage was verified to load at `http://localhost:8080`.
+
+This verifies frontend serving and container startup; full maze gameplay, webcam calibration, and model integration have not yet been tested.
