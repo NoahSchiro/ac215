@@ -10,8 +10,8 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-from torch.utils.data import DataLoader, Dataset
 import wandb
+from torch.utils.data import DataLoader, Dataset
 
 from src.data.utils import prepare_images
 from src.training.logging import ConsoleLogger, WandbLogger
