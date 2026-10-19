@@ -16,7 +16,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.mpiifacegaze import MPII
-from src.training.logging import ConsoleLogger
+from src.training.logging import ConsoleLogger, WandbLogger, resolve_run_dir
 from src.training.loop import TrainConfig, evaluate, fit
 from src.training.model import GazeNet
 
@@ -58,10 +58,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run = parser.add_argument_group("run")
-    run.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
-    run.add_argument("--checkpoint-dir", type=Path, default=Path("checkpoints"))
+    run.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", "cpu", "cuda", "mps"],
+        help="auto | cpu | cuda | mps",
+    )
+    run.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=Path("checkpoints"),
+        help="parent directory; each run gets a <timestamp> subdirectory",
+    )
     run.add_argument("--resume", action="store_true")
-    run.add_argument("--wandb", metavar="PROJECT", default=None)
+    run.add_argument(
+        "--wandb",
+        metavar="PROJECT",
+        help="wandb project this run is tracked in",
+    )
     return parser
 
 
@@ -82,6 +96,10 @@ def main() -> None:
 
     train_ids = [p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)]
     print(f"train {train_ids}  val [{args.val}]  test [{args.test}]")
+
+    run_dir = resolve_run_dir(args.checkpoint_dir, args.resume)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"run directory: {run_dir}")
 
     def loader(participants: int | list[int], *, shuffle: bool) -> DataLoader[Any]:
         return DataLoader(
@@ -119,20 +137,18 @@ def main() -> None:
         patience=args.patience,
     )
 
-    logger: Any = ConsoleLogger(args.checkpoint_dir / "run.jsonl")
-    if args.wandb is not None:
-        # Imported lazily so wandb stays an optional dependency.
-        import wandb
-
-        logger = wandb.init(project=args.wandb, config=vars(args))
-
+    logger = (
+        WandbLogger(project=args.wandb, config=vars(args))
+        if args.wandb
+        else ConsoleLogger(run_dir / "run.jsonl")
+    )
     best = fit(
         model,
         loader(train_ids, shuffle=True),
         loader(args.val, shuffle=False),
         device,
         config,
-        args.checkpoint_dir,
+        run_dir,
         logger,
         resume=args.resume,
     )
@@ -145,6 +161,25 @@ def main() -> None:
     print(
         f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
     )
+
+    logger.summarize({
+        "best_val_mean": best.mean,
+        "best_val_median": best.median,
+        **(
+            {
+                "worst_participant": worst[0],
+                "worst_participant_mean": worst[1].mean,
+            }
+            if worst is not None
+            else {}
+        ),
+        "test_mean": stats.mean,
+        "test_median": stats.median,
+        "test_p95": stats.p95,
+        "test_loss": test_loss,
+        "test_count": stats.count,
+    })
+    logger.finish()
 
 
 if __name__ == "__main__":
