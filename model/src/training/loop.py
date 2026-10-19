@@ -201,7 +201,7 @@ def save_checkpoint(
 def load_checkpoint(
     path: Path, model: GazeNet, optimizer: torch.optim.Optimizer | None = None
 ) -> tuple[int, float]:
-    """Restore weights (and optimizer, if given). Returns (next_epoch, best)."""
+    """Restore weights (and optimizer, if given). Returns (last_epoch, best)."""
     state = torch.load(path, map_location="cpu", weights_only=False)
     if state["output_mode"] != model.output_mode:
         raise ValueError(
@@ -230,7 +230,7 @@ def load_checkpoint(
     model.load_state_dict(state["model_state"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state"])
-    return int(state["epoch"]) + 1, float(state["best_error"])
+    return int(state["epoch"]), float(state["best_error"])
 
 
 def fit(
@@ -284,7 +284,8 @@ def fit(
 
     # Take a baseline before any training
     stats, val_loss = evaluate(model, val_loader, device, criterion)
-    last_stats = best_stats = stats
+    last_stats: ErrorStats = stats
+    best_stats: ErrorStats | None = None
     stale = 0
     logger.log({
         "epoch": 0,
@@ -345,8 +346,6 @@ def fit(
     if best_stats is None:
         # A resumed run that never beat the earlier best is a normal outcome;
         # report the final epoch and leave the previous best_metrics.json.
-        if last_stats is None:
-            raise RuntimeError("training ran zero epochs; nothing to report")
         return last_stats
 
     (checkpoint_dir / "best_metrics.json").write_text(

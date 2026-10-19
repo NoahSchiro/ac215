@@ -277,7 +277,7 @@ def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
     save_checkpoint(path, model, optimizer, 4, 0.25, TrainConfig())
 
     restored = GazeNet(pretrained=False)
-    assert load_checkpoint(path, restored) == (5, 0.25)
+    assert load_checkpoint(path, restored) == (4, 0.25)
     for a, b in zip(
         model.state_dict().values(), restored.state_dict().values(), strict=True
     ):
