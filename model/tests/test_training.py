@@ -47,6 +47,7 @@ class FakeGaze(Dataset[dict[str, Any]]):
                         "left_eye": rng.integers(0, 255, (36, 60, 3), dtype=np.uint8),
                         "right_eye": rng.integers(0, 255, (36, 60, 3), dtype=np.uint8),
                         "label": np.array([0.4, 0.6], dtype=np.float32),
+                        "direction": np.array([0.0, 0.0, 1.0], dtype=np.float32),
                         "R_norm": np.eye(3),
                     }
                 )
@@ -151,6 +152,20 @@ def test_eye_crops_are_required_when_enabled() -> None:
 def test_rejects_unknown_output_mode() -> None:
     with pytest.raises(ValueError, match="output_mode"):
         GazeNet(output_mode="sideways")  # type: ignore[arg-type]
+
+
+def test_rejects_nonsense_dropout() -> None:
+    with pytest.raises(ValueError, match="dropout"):
+        GazeNet(pretrained=False, dropout=1.5)
+
+
+def test_dropout_drops_in_train_and_is_off_in_eval() -> None:
+    model = GazeNet(pretrained=False, dropout=0.5)
+    face, eyes = torch.zeros(2, 3, 224, 224), torch.zeros(2, 3, 36, 60)
+    model.eval()
+    assert torch.equal(model(face, eyes, eyes), model(face, eyes, eyes))
+    model.train()
+    assert not torch.equal(model(face, eyes, eyes), model(face, eyes, eyes))
 
 
 def test_output_mode_is_keyword_only() -> None:
@@ -269,6 +284,72 @@ def test_checkpoint_round_trips_weights_and_optimizer(tmp_path: Path) -> None:
         assert torch.equal(a, b)
 
 
+def test_fit_decays_kernels_and_exempts_norms_and_biases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The optimizer grouping inside `fit`: 1-D params are weight-decay exempt."""
+    real_adamw = torch.optim.AdamW
+    captured: list[list[dict[str, Any]]] = []
+
+    def spy(params: Any, **kwargs: Any) -> torch.optim.Optimizer:
+        captured.append(params)
+        return real_adamw(params, **kwargs)
+
+    monkeypatch.setattr(torch.optim, "AdamW", spy)
+    model = GazeNet(pretrained=False)
+    fit(
+        model,
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=1, batch_size=2, num_workers=0),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+
+    decay, no_decay = captured[0]
+    # An exact partition: every parameter lands in exactly one group.
+    assert {
+        id(p) for group in captured[0] for p in group["params"]
+    } == {id(p) for p in model.parameters()}
+    # Norm scales and biases are 1-D; conv and linear kernels are 2-D+.
+    assert all(p.ndim >= 2 for p in decay["params"])
+    assert decay["weight_decay"] == 1e-4
+    assert all(p.ndim <= 1 for p in no_decay["params"])
+    assert no_decay["weight_decay"] == 0.0
+
+
+def test_fit_runs_with_every_augmentation(tmp_path: Path) -> None:
+    """The augment flags ride through TrainConfig into the training loop."""
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(
+            epochs=1,
+            batch_size=2,
+            num_workers=0,
+            augment_flip=True,
+            augment_crop_jitter=True,
+            augment_photometric=True,
+        ),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    assert len(read_jsonl(tmp_path / "run.jsonl")) > 0
+
+
+def test_checkpoint_refuses_a_mismatched_dropout(tmp_path: Path) -> None:
+    path = tmp_path / "last.pt"
+    trained = GazeNet(pretrained=False, dropout=0.5)
+    save_checkpoint(
+        path, trained, torch.optim.AdamW(trained.parameters()), 0, 1.0, TrainConfig()
+    )
+    with pytest.raises(ValueError, match="dropout"):
+        load_checkpoint(path, GazeNet(pretrained=False, dropout=0.1))
+
+
 def test_checkpoint_refuses_a_mismatched_output_mode(tmp_path: Path) -> None:
     path = tmp_path / "last.pt"
     model = GazeNet(pretrained=False)
@@ -343,6 +424,17 @@ def test_evaluate_reports_per_participant_error_and_loss() -> None:
     assert loss > 0.0
 
 
+def test_evaluate_works_in_gaze_direction_mode() -> None:
+    """The mode needs 3-D direction targets from the dataset; this broke once."""
+    stats, loss = evaluate(
+        GazeNet(pretrained=False, output_mode="gaze_direction"),
+        DataLoader(FakeGaze((3,)), batch_size=2),
+        torch.device("cpu"),
+    )
+    assert stats.count == 4
+    assert loss > 0.0
+
+
 def test_fit_logs_val_loss_alongside_train_loss() -> None:
     """Both are mean-per-batch of the same criterion, so they are comparable."""
     import tempfile
@@ -361,10 +453,70 @@ def test_fit_logs_val_loss_alongside_train_loss() -> None:
     assert {"train_loss", "val_loss"} <= set(records[1])
 
 
+def test_lr_schedule_none_keeps_the_lr_constant(tmp_path: Path) -> None:
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=2, batch_size=2, num_workers=0),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    lrs = [record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")]
+    assert lrs == [1e-4, 1e-4, 1e-4]
+
+
+def test_cosine_schedule_decays_the_lr(tmp_path: Path) -> None:
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=3, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    # Baseline at the full lr; epochs 1..3 train at 1.0x, 0.75x, 0.25x.
+    lrs = [record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")]
+    assert lrs == pytest.approx([1e-4, 1e-4, 0.75e-4, 0.25e-4])
+
+
+def test_resume_continues_the_cosine_schedule(tmp_path: Path) -> None:
+    """A resumed epoch trains with the same lr it would have had uninterrupted."""
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=1, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+    )
+    fit(
+        GazeNet(pretrained=False),
+        DataLoader(FakeGaze((0,)), batch_size=2),
+        DataLoader(FakeGaze((1,)), batch_size=2),
+        torch.device("cpu"),
+        TrainConfig(epochs=3, batch_size=2, num_workers=0, lr_schedule="cosine"),
+        tmp_path,
+        ConsoleLogger(tmp_path / "run.jsonl"),
+        resume=True,
+    )
+    lrs = {
+        record["epoch"]: record["lr"] for record in read_jsonl(tmp_path / "run.jsonl")
+    }
+    assert lrs[2] == pytest.approx(0.75e-4)
+    assert lrs[3] == pytest.approx(0.25e-4)
+
+
 def test_early_stopping_halts_when_val_stops_improving(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Patience counts consecutive epochs with no improvement, then breaks."""
+    # Seeded because `fit` does not: whether val plateaus within 20 epochs
+    # depends on the init, and the unseeded stream is order-dependent.
+    torch.manual_seed(0)
     fit(
         GazeNet(pretrained=False),
         DataLoader(FakeGaze((0,)), batch_size=2),

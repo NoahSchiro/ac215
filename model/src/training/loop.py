@@ -1,6 +1,7 @@
 """Train and evaluate loops, with checkpointing and resume."""
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -8,10 +9,12 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.utils import prepare_images
+from src.training.augment import augment_batch
 from src.training.logging import RunLogger
 from src.training.metrics import (
     ErrorStats,
@@ -38,6 +41,7 @@ class TrainConfig:
 
     epochs: int = 30
     learning_rate: float = 1e-4
+    lr_schedule: str = "none"
     weight_decay: float = 1e-4
     batch_size: int = 256
     num_workers: int = 8
@@ -45,16 +49,34 @@ class TrainConfig:
     grad_clip: float | None = 1.0
     patience: int | None = None
     """Stop after this many epochs with no improvement. None disables it."""
+    augment_flip: bool = False
+    augment_crop_jitter: bool = False
+    augment_photometric: bool = False
+    # Per-batch augmentation switches, applied on device during training
+    # only (see src/training/augment.py); recorded with the checkpoint.
 
 
 def forward_batch(
-    model: GazeNet, batch: dict[str, Any], device: torch.device
+    model: GazeNet,
+    batch: dict[str, Any],
+    device: torch.device,
+    config: TrainConfig | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Move one collated batch to device and run it. Returns (prediction, target).
 
     `batch` is a dict of stacked tensors, not a list of per-sample dicts:
     torch's default collate turns a list of dicts into a dict of batches.
+    `config` enables the training-time augmentations; evaluation passes
+    nothing and always sees the raw crops.
     """
+    if config is not None:
+        batch = augment_batch(
+            batch,
+            device,
+            flip=config.augment_flip,
+            crop_jitter=config.augment_crop_jitter,
+            photometric=config.augment_photometric,
+        )
     face = prepare_images(batch["face"], device, imagenet=model.pretrained)
     if model.use_eyes:
         prediction = model(
@@ -64,7 +86,13 @@ def forward_batch(
         )
     else:
         prediction = model(face)
-    return prediction, batch["label"].to(device, non_blocking=True).float()
+    key = "direction" if model.output_mode == "gaze_direction" else "label"
+    if key not in batch:
+        raise ValueError(
+            f"dataset samples lack {key!r}; a cache built before direction"
+            " labels existed must be rebuilt"
+        )
+    return prediction, batch[key].to(device, non_blocking=True).float()
 
 
 def compute_loss(
@@ -93,18 +121,18 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
-    grad_clip: float | None = None,
+    config: TrainConfig,
 ) -> float:
     """One pass over the training set. Returns mean loss per batch."""
     model.train()
     total = 0.0
     for batch in tqdm(loader, desc="train", leave=False):
         optimizer.zero_grad(set_to_none=True)
-        prediction, target = forward_batch(model, batch, device)
+        prediction, target = forward_batch(model, batch, device, config)
         loss = compute_loss(model, criterion, prediction, target)
         loss.backward()
-        if grad_clip is not None:
-            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        if config.grad_clip is not None:
+            nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
         optimizer.step()
         total += float(loss.item())
     return total / max(len(loader), 1)
@@ -160,6 +188,7 @@ def save_checkpoint(
             "optimizer_state": optimizer.state_dict(),
             "output_mode": model.output_mode,
             "use_eyes": model.use_eyes,
+            "dropout": model.dropout,
             # Recorded because it also selects the input normalization, so a
             # mismatch at load time silently degrades predictions.
             "pretrained": model.pretrained,
@@ -192,6 +221,12 @@ def load_checkpoint(
             f"checkpoint has use_eyes={state['use_eyes']},"
             f" model has use_eyes={model.use_eyes}"
         )
+    if "dropout" in state and float(state["dropout"]) != model.dropout:
+        raise ValueError(
+            f"checkpoint was trained with dropout={state['dropout']},"
+            f" model has dropout={model.dropout};"
+            " the training dynamics would not match"
+        )
     model.load_state_dict(state["model_state"])
     if optimizer is not None:
         optimizer.load_state_dict(state["optimizer_state"])
@@ -211,9 +246,12 @@ def fit(
     """Train for `config.epochs`, returning the best validation stats."""
     model.to(device)
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
-    )
+    decay = [p for p in model.parameters() if p.ndim > 1]
+    no_decay = [p for p in model.parameters() if p.ndim <= 1]
+    optimizer = torch.optim.AdamW([
+        {"params": decay, "weight_decay": config.weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ], lr=config.learning_rate)
     criterion = build_criterion(model)
 
     start_epoch = 0
@@ -223,6 +261,27 @@ def fit(
         start_epoch, best_error = load_checkpoint(last_path, model, optimizer)
         print(f"resumed from {last_path} at epoch {start_epoch}")
 
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+    if config.lr_schedule == "cosine":
+        t_max = max(config.epochs, 1)
+        scheduler = CosineAnnealingLR(optimizer, T_max=t_max)
+        completed = max(start_epoch - 1, 0)
+        scheduler.base_lrs = [config.learning_rate] * len(optimizer.param_groups)
+        for group in optimizer.param_groups:
+            group["lr"] = config.learning_rate
+        scheduler.last_epoch = completed
+        for group, base in zip(optimizer.param_groups, scheduler.base_lrs):
+            group["lr"] = (
+                scheduler.eta_min
+                + (base - scheduler.eta_min)
+                * (1 + math.cos(math.pi * completed / t_max))
+                / 2
+            )
+    elif config.lr_schedule != "none":
+        raise ValueError(
+            f"lr_schedule must be 'none' or 'cosine', got {config.lr_schedule!r}"
+        )
+
     # Take a baseline before any training
     stats, val_loss = evaluate(model, val_loader, device, criterion)
     last_stats: ErrorStats = stats
@@ -230,6 +289,7 @@ def fit(
     stale = 0
     logger.log({
         "epoch": 0,
+        "lr": optimizer.param_groups[0]["lr"],
         "val_loss": val_loss,
         "val_mean": stats.mean,
         "val_median": stats.median,
@@ -240,11 +300,14 @@ def fit(
         },
     })
 
-    for epoch in range(start_epoch+1, config.epochs+1):
+    for epoch in range(max(start_epoch, 1), config.epochs+1):
         started = time.monotonic()
+        lr = optimizer.param_groups[0]["lr"]
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, criterion, device, config.grad_clip
+            model, train_loader, optimizer, criterion, device, config
         )
+        if scheduler is not None:
+            scheduler.step()
         stats, val_loss = evaluate(model, val_loader, device, criterion)
         last_stats = stats
 
@@ -260,6 +323,7 @@ def fit(
 
         logger.log({
             "epoch": epoch,
+            "lr": lr,
             "train_loss": train_loss,
             "val_loss": val_loss,
             "val_mean": stats.mean,

@@ -88,6 +88,28 @@ The crops are cached as a webdataset, so training reads from disk and does not
 run MediaPipe. It uses CUDA, then Apple MPS, then CPU, whichever is available
 first; override with `--device`.
 
+`--dataset gazecapture` trains on GazeCapture instead. MPII splits by participant
+via `--val/--test`; GazeCapture ignores those and uses its own official
+subject-disjoint train/val/test splits.
+
+`--weights PATH` initializes the model from a previous run's checkpoint
+(weights only: fresh optimizer and epoch counter, so it lands in its own new
+run directory). The checkpoint's architecture flags must match the current
+invocation (`--output-mode`, `--no-pretrained`, `--no-eyes`, `--dropout`);
+`load_checkpoint` fails loudly on a mismatch. `--resume` instead continues a
+run in place and is mutually exclusive with `--weights`.
+
+`--lr-schedule cosine` decays the learning rate toward zero across `--epochs`
+instead of holding it constant (default `none`); the lr used each epoch is
+logged as `lr`.
+
+Augmentation is off by default and runs per batch on the GPU during training
+only (evaluation always sees raw crops): `--flip` mirrors half the samples
+(eye crops swap sides and labels transform to match), `--crop-jitter` adds
++/- 5° rotation, +/- 10% scale and +/- 4% translation to the crops, and
+`--photometric-jitter` adds +/- 20% brightness/contrast. All three are recorded
+in checkpoints.
+
 If you are using the `wandb` logger, then you need to login first:
 
 ```bash

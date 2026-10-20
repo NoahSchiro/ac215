@@ -401,16 +401,24 @@ def check_sample(
     face, left_eye, right_eye, R_virtual = normalize_face(
         image, landmarks, R, t, sample.camera_intrinsics
     )
-    fraction, _ = transform_label(
-        sample.gaze_target_px, sample.screen_size_px, R_virtual
+    fraction, direction = transform_label(
+        sample.gaze_target_px,
+        sample.screen_size_px,
+        R_virtual,
+        gaze_direction_cam=sample.gaze_direction_cam,
     )
     return {
         "sample_id": sample.sample_id,
         "face": face,
         "left_eye": left_eye,
         "right_eye": right_eye,
-        "label": np.array(fraction, dtype=np.float32),
         "R_norm": R_virtual,
+        "label": np.array(fraction, dtype=np.float32),
+        **(
+            {"direction": direction.astype(np.float32)}
+            if direction is not None
+            else {}
+        ),
     }
 
 
@@ -471,6 +479,11 @@ def build_webdataset(
                             **sample.to_manifest_entry(),
                             "label": result["label"].tolist(),
                             "R_norm": result["R_norm"].tolist(),
+                            **(
+                                {"direction": result["direction"].tolist()}
+                                if "direction" in result
+                                else {}
+                            ),
                         },
                         "png": result["face"],
                         "eyes.npy": np.stack(
@@ -524,6 +537,38 @@ def read_shard_member(shard: str, name: str) -> bytes:
         return f.read(size)
 
 
+def shard_lookup(cache_dir: str | os.PathLike[str]) -> dict[str, str]:
+    """Map every sample_id in a webdataset cache to its shard file.
+
+    Built by a header-only scan of all shards and persisted next to them
+    (``index.json``), so repeated runs -- and the train/val/test Dataset
+    constructions within one run -- skip the scan entirely. Rebuilt
+    automatically whenever any shard file changes.
+    """
+    cache_dir = Path(cache_dir)
+    shards = sorted(cache_dir.glob("*.tar"))
+    fingerprint = [
+        [shard.name, shard.stat().st_size, shard.stat().st_mtime_ns]
+        for shard in shards
+    ]
+    index_path = cache_dir / "index.json"
+    if index_path.is_file():
+        saved = json.loads(index_path.read_text(encoding="utf-8"))
+        if saved["fingerprint"] == fingerprint:
+            return saved["lookup"]
+
+    lookup: dict[str, str] = {}
+    for shard in shards:
+        for name in shard_index(str(shard)):
+            if name.endswith(".json"):
+                lookup[name[: -len(".json")]] = str(shard)
+    index_path.write_text(
+        json.dumps({"fingerprint": fingerprint, "lookup": lookup}),
+        encoding="utf-8",
+    )
+    return lookup
+
+
 def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
     """Read one preprocessed sample from a shard written by `build_webdataset`.
 
@@ -557,6 +602,11 @@ def read_webdataset_sample(shard: str, key: str) -> dict[str, Any]:
         "right_eye": eyes[1],
         "label": np.array(meta["label"], dtype=np.float32),
         "R_norm": np.array(meta["R_norm"], dtype=np.float64),
+        **(
+            {"direction": np.array(meta["direction"], dtype=np.float32)}
+            if "direction" in meta
+            else {}
+        ),
     }
 
 

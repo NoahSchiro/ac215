@@ -29,6 +29,12 @@ dev = [
     "types-tqdm>=4.70.0.20260906",
 ]
 
+# The runtime wandb/ log dir (gitignored) sits next to the code, so ruff's
+# isort misdetects `import wandb` as first-party locally. Pin it as third-party
+# so local and CI agree on import ordering.
+[tool.ruff.lint.isort]
+known-third-party = ["wandb"]
+
 [mypy]
 strict = true
 

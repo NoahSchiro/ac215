@@ -1,9 +1,11 @@
 """Train the gaze model.
 
-    uv run python train.py --val 13 --test 14 --epochs 30
+    uv run train.py
 
 Splits are participant-disjoint: a subject never appears in both train and
-eval, because generalizing to an unseen face is what we are measuring.
+eval, because generalizing to an unseen face is what we are measuring. MPII
+splits by participant (--val/--test); GazeCapture has its own official
+subject-disjoint train/val/test splits, which are used as-is.
 """
 
 import argparse
@@ -15,9 +17,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from src.data.gazecapture import GazeCapture
 from src.data.mpiifacegaze import MPII
 from src.training.logging import ConsoleLogger, WandbLogger, resolve_run_dir
-from src.training.loop import TrainConfig, evaluate, fit
+from src.training.loop import TrainConfig, evaluate, fit, load_checkpoint
 from src.training.model import GazeNet
 
 NUM_PARTICIPANTS = 15
@@ -27,12 +30,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     data = parser.add_argument_group("data")
     data.add_argument(
+        "--dataset",
+        choices=["mpiifacegaze", "gazecapture"],
+        default="mpiifacegaze",
+        help="dataset to train on",
+    )
+    data.add_argument(
         "--data-root",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "data" / "MPIIFaceGaze",
+        default=None,
+        help="raw dataset root; defaults to data/<dataset>",
     )
-    data.add_argument("--val", type=int, default=13)
-    data.add_argument("--test", type=int, default=14)
+    data.add_argument(
+        "--val", type=int, default=13, help="MPII validation participant"
+    )
+    data.add_argument(
+        "--test", type=int, default=14, help="MPII test participant"
+    )
 
     model = parser.add_argument_group("model")
     model.add_argument(
@@ -42,11 +56,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     model.add_argument("--no-eyes", action="store_true", help="ablate the eye towers")
     model.add_argument("--no-pretrained", action="store_true", help="random init")
+    model.add_argument(
+        "--dropout", type=float, default=0.1, help="head dropout; 0 disables it"
+    )
+    model.add_argument(
+        "--weights",
+        type=Path,
+        default=None,
+        help="initialize from a previous run's checkpoint (weights only)",
+    )
+
+    augment = parser.add_argument_group("augmentation")
+    augment.add_argument(
+        "--flip",
+        action="store_true",
+        help="random horizontal flips (eye crops swap; labels transform to match)",
+    )
+    augment.add_argument(
+        "--crop-jitter",
+        action="store_true",
+        help="random rotation/scale/translation of the crops",
+    )
+    augment.add_argument(
+        "--photometric-jitter",
+        action="store_true",
+        help="random brightness/contrast",
+    )
 
     optim = parser.add_argument_group("optimization")
-    optim.add_argument("--epochs", type=int, default=30)
+    optim.add_argument("--epochs", type=int, default=10)
     optim.add_argument("--lr", type=float, default=1e-4)
-    optim.add_argument("--weight-decay", type=float, default=1e-4)
+    optim.add_argument(
+        "--lr-schedule",
+        choices=["cosine", "none"],
+        default="cosine",
+        help="decay the lr over --epochs (cosine) or hold it constant",
+    )
+    optim.add_argument("--weight-decay", type=float, default=0.01)
     optim.add_argument("--batch-size", type=int, default=256)
     optim.add_argument("--workers", type=int, default=8)
     optim.add_argument("--seed", type=int, default=0)
@@ -88,22 +134,39 @@ def main() -> None:
     torch.cuda.manual_seed_all(args.seed)
     torch.manual_seed(args.seed)
 
-    for name, participant in (("--val", args.val), ("--test", args.test)):
-        if not 0 <= participant < NUM_PARTICIPANTS:
-            raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
-    if args.val == args.test:
-        raise SystemExit("--val and --test must be different participants")
+    data_dirs = {"mpiifacegaze": "MPIIFaceGaze", "gazecapture": "GazeCapture"}
+    args.data_root = args.data_root or (
+        Path(__file__).resolve().parents[1] / "data" / data_dirs[args.dataset]
+    )
 
-    train_ids = [p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)]
-    print(f"train {train_ids}  val [{args.val}]  test [{args.test}]")
+    splits: dict[str, Any]
+    if args.dataset == "mpiifacegaze":
+        for name, participant in (("--val", args.val), ("--test", args.test)):
+            if not 0 <= participant < NUM_PARTICIPANTS:
+                raise SystemExit(f"{name} must be in 0..{NUM_PARTICIPANTS - 1}")
+        if args.val == args.test:
+            raise SystemExit("--val and --test must be different participants")
+
+        train_ids = [
+            p for p in range(NUM_PARTICIPANTS) if p not in (args.val, args.test)
+        ]
+        splits = {"train": train_ids, "val": args.val, "test": args.test}
+    else:
+        splits = {"train": "train", "val": "val", "test": "test"}
+
+    if args.weights is not None and args.resume:
+        raise SystemExit("--weights and --resume are mutually exclusive")
 
     run_dir = resolve_run_dir(args.checkpoint_dir, args.resume)
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"run directory: {run_dir}")
 
-    def loader(participants: int | list[int], *, shuffle: bool) -> DataLoader[Any]:
+    def loader(role: str, *, shuffle: bool) -> DataLoader[Any]:
+        if args.dataset == "mpiifacegaze":
+            dataset: Any = MPII(splits[role], args.data_root)
+        else:
+            dataset = GazeCapture(splits[role], args.data_root)
         return DataLoader(
-            MPII(participants, args.data_root),
+            dataset,
             batch_size=args.batch_size,
             shuffle=shuffle,
             num_workers=args.workers,
@@ -124,17 +187,26 @@ def main() -> None:
         output_mode=args.output_mode,
         pretrained=not args.no_pretrained,
         use_eyes=not args.no_eyes,
+        dropout=args.dropout,
     )
     print(f"{model.parameter_count() / 1e6:.2f}M parameters on {device}")
+
+    if args.weights is not None:
+        load_checkpoint(args.weights, model)
+        print(f"initialized weights from {args.weights}")
 
     config = TrainConfig(
         epochs=args.epochs,
         learning_rate=args.lr,
+        lr_schedule=args.lr_schedule,
         weight_decay=args.weight_decay,
         batch_size=args.batch_size,
         num_workers=args.workers,
         seed=args.seed,
         patience=args.patience,
+        augment_flip=args.flip,
+        augment_crop_jitter=args.crop_jitter,
+        augment_photometric=args.photometric_jitter,
     )
 
     logger = (
@@ -144,8 +216,8 @@ def main() -> None:
     )
     best = fit(
         model,
-        loader(train_ids, shuffle=True),
-        loader(args.val, shuffle=False),
+        loader("train", shuffle=True),
+        loader("val", shuffle=False),
         device,
         config,
         run_dir,
@@ -157,7 +229,9 @@ def main() -> None:
     if worst is not None:
         print(f"worst participant: {worst[0]} at {worst[1].mean:.5f}")
 
-    stats, test_loss = evaluate(model, loader(args.test, shuffle=False), device)
+    # Recover the best model before running test
+    load_checkpoint(run_dir / "best.pt", model)
+    stats, test_loss = evaluate(model, loader("test", shuffle=False), device)
     print(
         f"test mean {stats.mean:.5f} (loss {test_loss:.5f}) over {stats.count} samples"
     )
