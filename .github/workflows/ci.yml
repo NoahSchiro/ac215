@@ -51,3 +51,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: typst-community/setup-typst@v3
       - run: typst compile main.typ
+
+  containers:
+    name: containers (build + compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nothing built these before, so a Dockerfile could break without CI
+      # noticing until someone tried to run the pipeline.
+      - name: Build the model image
+        run: docker build -t gaze-model:ci ./model
+
+      - name: Build the UI image
+        run: docker build -t ac215-ui:ci ./ui
+
+      # Catches a malformed compose file, and catches a service going missing
+      # if a second compose file is ever added (compose silently reads only
+      # the highest-precedence one).
+      - name: Validate the compose file
+        run: |
+          docker compose config --quiet
+          services=$(docker compose config --services | sort | tr '\n' ' ')
+          echo "services: $services"
+          test "$services" = "train ui " || {
+            echo "expected 'train ui ', got '$services'"; exit 1; }
