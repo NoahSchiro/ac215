@@ -26,9 +26,8 @@ services:
 
     environment:
       - PYTHONUNBUFFERED=1
-
-    # No `command`: train.py's own defaults apply, so they are defined in one
-    # place. Override per run: `docker compose run --rm train --epochs 1`
+    
+    command: ["uv", "run", "train.py"]
 
   ui:
     build:
