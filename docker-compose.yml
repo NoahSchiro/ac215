@@ -1,12 +1,3 @@
-# Services:
-#
-#     docker compose up              serve the web UI
-#
-# `train` is a job that runs to completion; `ui` is a long-lived server, and
-# the UI consumes nothing training produces. The profile keeps training
-# opt-in so `up` does not retrain whenever someone wants the app. `compose
-# run` enables the profile itself, so the training command needs no flag.
-
 services:
   train:
     build:
@@ -26,8 +17,15 @@ services:
 
     environment:
       - PYTHONUNBUFFERED=1
-    
-    command: ["uv", "run", "train.py"]
+
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        if [ ! -e /data/MPIIFaceGaze ]; then
+          echo "Unpacking /data/MPIIFaceGaze.tar.gz -> /data ..."
+          tar -xzf /data/MPIIFaceGaze.tar.gz -C /data
+        fi
+        exec uv run train.py
 
   ui:
     build:
