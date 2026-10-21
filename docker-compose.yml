@@ -1,7 +1,6 @@
 # Services:
 #
 #     docker compose up              serve the web UI
-#     docker compose run --rm train  build the cache and train
 #
 # `train` is a job that runs to completion; `ui` is a long-lived server, and
 # the UI consumes nothing training produces. The profile keeps training
@@ -10,7 +9,6 @@
 
 services:
   train:
-    profiles: ["train"]
     build:
       context: ./model
     image: gaze-model:dev

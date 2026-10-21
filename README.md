@@ -33,14 +33,14 @@ While I would include the data here through `git lfs`,
 
 The Gaze Maze frontend is built with React, TypeScript, and Vite. The UI is containerized using a multi-stage Docker build: Node.js builds the application, and Nginx serves the compiled files.
 
-### Running the UI with Docker Compose
+### Running with Docker Compose
 
 **Prerequisite:** Docker Desktop must be installed and running.
 
 From the project root, run:
 
 ```bash
-docker compose up --build -d ui
+docker compose up
 ```
 
 Open the application in your browser:
@@ -76,26 +76,11 @@ The UI will be available at **http://localhost:8080**.
 - `ui/.dockerignore` — Excludes local dependencies, build outputs, and environment files.
 - `docker-compose.yml` — Defines both the UI (`ui`) and model training (`train`) services.
 
-### Integration with Model Training
-
-The UI and model training services share a single Docker Compose configuration.
-
-To launch the UI:
-
-```bash
-docker compose up --build -d ui
-```
-
-To run the model training pipeline separately:
-
-```bash
-docker compose run --rm train
-```
 
 The UI is available at `http://localhost:8080`. The training service is not started when launching only the UI.
 
 ### Verification
 
-The UI container was successfully built and launched using Docker Compose. The Gaze Maze homepage was verified to load at `http://localhost:8080`.
+The UI container and training was successfully built and launched using Docker Compose. The Gaze Maze homepage was verified to load at `http://localhost:8080`.
 
 This verifies frontend serving and container startup; full maze gameplay, webcam calibration, and model integration have not yet been tested.
